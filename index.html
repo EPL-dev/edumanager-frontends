@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EduManager – Connexion</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+</head>
+<body class="login-page">
+
+  <div class="login-bg">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <div class="login-wrapper">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="logo-icon">
+          <i class="fas fa-graduation-cap"></i>
+        </div>
+        <h1>EduManager</h1>
+        <p>Système de gestion scolaire</p>
+      </div>
+
+      <div id="login-error" class="alert alert-danger hidden">
+        <i class="fas fa-triangle-exclamation"></i>
+        <span id="login-error-msg">Identifiants incorrects</span>
+      </div>
+
+      <div class="form-group">
+        <label for="username"><i class="fas fa-user"></i> Nom d'utilisateur</label>
+        <input type="text" id="username" placeholder="Entrez votre identifiant" autocomplete="off"/>
+      </div>
+
+      <div class="form-group">
+        <label for="password"><i class="fas fa-lock"></i> Mot de passe</label>
+        <div class="input-eye">
+          <input type="password" id="password" placeholder="Entrez votre mot de passe"/>
+          <button type="button" id="toggle-pw" tabindex="-1">
+            <i class="fas fa-eye" id="eye-icon"></i>
+          </button>
+        </div>
+      </div>
+
+      <button class="btn-login" id="btn-login" onclick="handleLogin()">
+        <span>Se connecter</span>
+        <i class="fas fa-arrow-right"></i>
+      </button>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+</body>
+</html>

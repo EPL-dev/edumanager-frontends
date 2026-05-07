@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>EduManager — Setup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 16px; padding: 2rem; width: 100%; max-width: 480px; }
+    h1 { font-size: 1.4rem; margin-bottom: .5rem; }
+    p  { color: #8b949e; font-size: .9rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: .75rem; color: #8b949e; margin-bottom: .3rem; text-transform: uppercase; letter-spacing: .05em; }
+    input { width: 100%; background: #21262d; border: 1px solid #30363d; border-radius: 8px; padding: .7rem 1rem; color: #e6edf3; font-size: .9rem; margin-bottom: 1rem; outline: none; }
+    input:focus { border-color: #3b82f6; }
+    button { width: 100%; background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: .85rem; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button:disabled { background: #374151; cursor: not-allowed; }
+    .result { margin-top: 1rem; padding: 1rem; border-radius: 8px; font-size: .875rem; display: none; line-height: 1.5; }
+    .success { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.3); color: #86efac; }
+    .error   { background: rgba(239,68,68,.1);  border: 1px solid rgba(239,68,68,.3);  color: #fca5a5; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>🎓 EduManager — Setup</h1>
+  <p>Créer le compte Super Administrateur. Cette action ne peut être faite qu'une seule fois.</p>
+
+  <label>URL Backend</label>
+  <input type="text" id="api-url" value="https://edumanager-api-5n33.onrender.com/api"/>
+
+  <label>Identifiant</label>
+  <input type="text" id="username" value="superadmin"/>
+
+  <label>Mot de passe</label>
+  <input type="password" id="password" value="super123"/>
+
+  <label>Nom complet</label>
+  <input type="text" id="nom" value="Super Administrateur"/>
+
+  <button onclick="createAdmin()" id="btn">🚀 Créer le Super Admin</button>
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+async function createAdmin() {
+  const btn      = document.getElementById('btn');
+  const apiUrl   = document.getElementById('api-url').value.trim();
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const nom      = document.getElementById('nom').value.trim();
+
+  if (!apiUrl || !username || !password || !nom) { showResult('Remplissez tous les champs.', 'error'); return; }
+
+  btn.disabled    = true;
+  btn.textContent = '⏳ Création en cours...';
+
+  try {
+    const res  = await fetch(apiUrl + '/auth/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, nom })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showResult('✅ Super Admin créé ! Connectez-vous maintenant sur votre application Netlify.', 'success');
+      btn.textContent = '✅ Terminé !';
+    } else {
+      showResult('❌ ' + data.message, 'error');
+      btn.disabled = false;
+      btn.textContent = '🚀 Créer le Super Admin';
+    }
+  } catch (err) {
+    showResult('❌ Erreur : ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '🚀 Créer le Super Admin';
+  }
+}
+
+function showResult(msg, type) {
+  const el = document.getElementById('result');
+  el.textContent   = msg;
+  el.className     = 'result ' + type;
+  el.style.display = 'block';
+}
+</script>
+</body>
+</html>
