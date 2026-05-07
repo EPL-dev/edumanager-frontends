@@ -1,143 +1,133 @@
-// =============================================
-//  auth.js — Authentification & Rôles (v2)
-//  Rôles : superadmin > admin > etudiant
-// =============================================
+// auth.js — Authentification JWT Production
 
-function initUsers() {
-  if (!localStorage.getItem("edu_users")) {
-    const defaultUsers = [
-      {
-        id: 1,
-        username: "superadmin",
-        password: hashPassword("super123"),
-        role: "superadmin",
-        nom: "Super Administrateur",
-        email: "superadmin@edu.com",
-        createdAt: new Date().toLocaleDateString("fr-FR"),
-      },
-      {
-        id: 2,
-        username: "admin",
-        password: hashPassword("admin123"),
-        role: "admin",
-        nom: "Administrateur",
-        email: "admin@edu.com",
-        createdAt: new Date().toLocaleDateString("fr-FR"),
-      },
-      {
-        id: 3,
-        username: "etudiant",
-        password: hashPassword("etud123"),
-        role: "etudiant",
-        nom: "Étudiant Test",
-        email: "etudiant@edu.com",
-        createdAt: new Date().toLocaleDateString("fr-FR"),
-      },
-    ];
-    localStorage.setItem("edu_users", JSON.stringify(defaultUsers));
-  }
-}
-
-function hashPassword(password) {
-  const salt = "edumanager_2024_";
-  return btoa(salt + password);
-}
-
-function verifyPassword(password, hash) {
-  return hashPassword(password) === hash;
-}
-
-function handleLogin() {
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value;
+async function handleLogin() {
+  var username = (document.getElementById('username').value || '').trim();
+  var password = document.getElementById('password').value || '';
 
   if (!username || !password) {
-    showLoginError("Veuillez remplir tous les champs");
+    showLoginError('Veuillez remplir tous les champs.');
     return;
   }
 
-  initUsers();
-  const users = JSON.parse(localStorage.getItem("edu_users"));
-  const user = users.find((u) => u.username === username);
-
-  if (!user || !verifyPassword(password, user.password)) {
-    showLoginError("Nom d'utilisateur ou mot de passe incorrect");
-    return;
+  // Afficher loading
+  var btn = document.getElementById('btn-login');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connexion...';
   }
 
-  const session = {
-    id: user.id,
-    username: user.username,
-    role: user.role,
-    nom: user.nom,
-  };
-  sessionStorage.setItem("edu_current_user", JSON.stringify(session));
-  window.location.href = "dashboard.html";
+  try {
+    var res = await api.auth.login({ username: username, password: password });
+
+    if (!res.success) {
+      showLoginError(res.message || 'Identifiants incorrects.');
+      return;
+    }
+
+    // Stocker le token JWT et les infos utilisateur
+    localStorage.setItem('edu_token', res.token);
+    localStorage.setItem('edu_user', JSON.stringify(res.user));
+
+    // Rediriger vers le dashboard
+    window.location.href = 'dashboard.html';
+
+  } catch (err) {
+    showLoginError('Erreur de connexion. Réessayez.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>Se connecter</span><i class="fas fa-arrow-right"></i>';
+    }
+  }
 }
 
 function showLoginError(msg) {
-  const errorDiv = document.getElementById("login-error");
-  const errorMsg = document.getElementById("login-error-msg");
-  if (errorMsg) errorMsg.textContent = msg;
-  if (errorDiv) errorDiv.classList.remove("hidden");
+  var d = document.getElementById('login-error');
+  var m = document.getElementById('login-error-msg');
+  if (m) m.textContent = msg;
+  if (d) d.classList.remove('hidden');
 }
 
 function handleLogout() {
-  sessionStorage.removeItem("edu_current_user");
-  window.location.href = "index.html";
+  localStorage.removeItem('edu_token');
+  localStorage.removeItem('edu_user');
+  window.location.href = 'index.html';
 }
 
 function checkAuth() {
-  const user = getCurrentUser();
-  if (!user) {
-    window.location.href = "index.html";
+  var token = localStorage.getItem('edu_token');
+  var user  = getCurrentUser();
+  if (!token || !user) {
+    window.location.href = 'index.html';
     return null;
   }
   return user;
 }
 
 function getCurrentUser() {
-  const data = sessionStorage.getItem("edu_current_user");
-  return data ? JSON.parse(data) : null;
-}
-
-function applyRole(user) {
-  document.body.classList.add("role-" + user.role);
-  if (user.role === "superadmin") document.body.classList.add("role-admin");
-
-  const roleLabels = {
-    superadmin: "👑 Super Admin",
-    admin: "🔑 Admin",
-    etudiant: "🎓 Étudiant",
-  };
-
-  const nameEl = document.getElementById("user-display-name");
-  const roleEl = document.getElementById("user-display-role");
-  const topbarRole = document.getElementById("topbar-role");
-
-  if (nameEl) nameEl.textContent = user.nom || user.username;
-  if (roleEl) roleEl.textContent = roleLabels[user.role] || user.role;
-  if (topbarRole) {
-    topbarRole.textContent = roleLabels[user.role] || user.role;
-    topbarRole.className = `role-badge role-badge-${user.role}`;
+  try {
+    return JSON.parse(localStorage.getItem('edu_user'));
+  } catch(e) {
+    return null;
   }
 }
 
-const toggleBtn = document.getElementById("toggle-pw");
-if (toggleBtn) {
-  toggleBtn.addEventListener("click", () => {
-    const pwInput = document.getElementById("password");
-    const eyeIcon = document.getElementById("eye-icon");
-    if (pwInput.type === "password") {
-      pwInput.type = "text";
-      eyeIcon.className = "fas fa-eye-slash";
-    } else {
-      pwInput.type = "password";
-      eyeIcon.className = "fas fa-eye";
-    }
+function applyInterface(user) {
+  var labels = {
+    superadmin: '👑 Super Admin',
+    admin:      '🔑 Admin',
+    etudiant:   '🎓 Étudiant'
+  };
+
+  var nameEl = document.getElementById('user-display-name');
+  var roleEl = document.getElementById('user-display-role');
+  if (nameEl) nameEl.textContent = user.nom || user.username;
+  if (roleEl) roleEl.textContent = labels[user.role] || user.role;
+
+  var tb = document.getElementById('topbar-role');
+  if (tb) {
+    tb.textContent = labels[user.role] || user.role;
+    tb.className   = 'role-badge rb-' + user.role;
+  }
+
+  var isAdmin = (user.role === 'admin' || user.role === 'superadmin');
+  var isSA    = (user.role === 'superadmin');
+  var isEtu   = (user.role === 'etudiant');
+
+  document.querySelectorAll('.admin-only').forEach(function(el) {
+    el.classList[isAdmin ? 'remove' : 'add']('role-hidden');
+  });
+  document.querySelectorAll('.superadmin-only').forEach(function(el) {
+    el.classList[isSA ? 'remove' : 'add']('role-hidden');
+  });
+  document.querySelectorAll('.student-visible').forEach(function(el) {
+    el.classList[isEtu ? 'remove' : 'add']('role-hidden');
   });
 }
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && document.getElementById("btn-login")) handleLogin();
+// Toggle mot de passe
+document.addEventListener('DOMContentLoaded', function() {
+  var toggleBtn = document.getElementById('toggle-pw');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function() {
+      var inp = document.getElementById('password');
+      var ico = document.getElementById('eye-icon');
+      if (!inp) return;
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        ico.className = 'fas fa-eye-slash';
+      } else {
+        inp.type = 'password';
+        ico.className = 'fas fa-eye';
+      }
+    });
+  }
+
+  // Connexion avec Entrée
+  var pw = document.getElementById('password');
+  if (pw) {
+    pw.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleLogin();
+    });
+  }
 });
