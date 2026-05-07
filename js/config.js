@@ -1,7 +1,7 @@
-// config.js — Configuration API
+// config.js — Configuration API Production
 const CONFIG = {
-  // URL du backend Render (à mettre à jour après déploiement)
-  API_URL: "https://edumanager-api-5n33.onrender.com/api",
+  API_URL: 'https://edumanager-api-5n33.onrender.com/api',
   TOAST_DURATION: 3500,
   PAGE_SIZE: 25,
 };
+
