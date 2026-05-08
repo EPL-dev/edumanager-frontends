@@ -3,7 +3,6 @@
 // =============================================
 
 document.addEventListener('DOMContentLoaded', () => {
-  initUsers();
   const user = checkAuth();
   if (!user) return;
 
