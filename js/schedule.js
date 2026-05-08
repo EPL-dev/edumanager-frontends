@@ -1,80 +1,60 @@
-// =============================================
-//  schedule.js — Emploi du temps
-// =============================================
+// schedule.js — MySQL version
+var DAYS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
 
-const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+async function renderSchedule() {
+  var grid = document.getElementById('schedule-grid');
+  if (!grid) return;
+  grid.innerHTML = '<p style="color:var(--muted);padding:1rem"><i class="fas fa-spinner fa-spin"></i> Chargement...</p>';
 
-function renderSchedule() {
-  const container = document.getElementById("schedule-grid");
-  if (!container) return;
+  var res     = await api.schedule.list();
+  var user    = getCurrentUser();
+  var isAdmin = (user.role === 'admin' || user.role === 'superadmin');
 
-  const schedule = getData("edu_schedule");
-  const subjects = getData("edu_subjects");
-  const isAdmin = document.body.classList.contains("role-admin");
+  if (!res.success) { grid.innerHTML = '<p style="color:var(--muted);padding:1rem">Erreur chargement.</p>'; return; }
 
-  container.innerHTML = DAYS.map((day) => {
-    const slots = schedule
-      .filter((s) => s.day === day)
-      .sort((a, b) => a.start.localeCompare(b.start));
+  grid.innerHTML = DAYS.map(function(day) {
+    var slots = (res.schedule || []).filter(function(s) { return s.day === day; })
+      .sort(function(a, b) { return a.startTime.localeCompare(b.startTime); });
 
-    const slotsHtml =
-      slots.length === 0
-        ? '<p style="padding:0.6rem 0.8rem;color:var(--text-muted);font-size:0.78rem;font-style:italic">Pas de cours</p>'
-        : slots
-            .map((slot) => {
-              const subj = subjects.find((s) => s.id == slot.subjectId);
-              return `
-            <div class="schedule-slot">
-              <span class="slot-time">${slot.start} → ${slot.end}</span>
-              <span class="slot-subject">${subj ? subj.name : "–"}</span>
-              ${isAdmin ? `<button class="btn-icon del" style="align-self:flex-end;margin-top:0.2rem" onclick="deleteScheduleSlot(${slot.id})"><i class="fas fa-trash"></i></button>` : ""}
-            </div>
-          `;
-            })
-            .join("");
+    var slotsHtml = slots.length
+      ? slots.map(function(s) {
+          return '<div class="slot">' +
+            '<span class="slot-time">' + s.startTime + ' – ' + s.endTime + '</span>' +
+            '<span class="slot-name">' + escHtml(s.subjectName || '–') + '</span>' +
+            (isAdmin ? '<button class="btn-icon del sm" onclick="deleteSlot(' + s.id + ')"><i class="fas fa-xmark"></i></button>' : '') +
+          '</div>';
+        }).join('')
+      : '<p class="slot-empty">Pas de cours</p>';
 
-    return `
-      <div class="schedule-day">
-        <div class="schedule-day-header">${day}</div>
-        ${slotsHtml}
-      </div>
-    `;
-  }).join("");
+    return '<div class="sched-col"><div class="sched-day">' + day + '</div>' + slotsHtml + '</div>';
+  }).join('');
 }
 
-function openScheduleModal() {
-  populateSubjectSelect("sched-subject");
-  openModal("modal-schedule");
+async function openScheduleModal() {
+  await fillSubjectsSelect('sched-subject', false);
+  openModal('modal-schedule');
 }
 
-function saveSchedule() {
-  const subjectId = document.getElementById("sched-subject")?.value;
-  const day = document.getElementById("sched-day")?.value;
-  const start = document.getElementById("sched-start")?.value;
-  const end = document.getElementById("sched-end")?.value;
+async function saveSchedule() {
+  var subjectId = document.getElementById('sched-subject')?.value;
+  var day       = document.getElementById('sched-day')?.value;
+  var startTime = document.getElementById('sched-start')?.value;
+  var endTime   = document.getElementById('sched-end')?.value;
 
-  if (!subjectId || !day || !start || !end) {
-    showToast("Veuillez remplir tous les champs", "error");
-    return;
-  }
-  if (start >= end) {
-    showToast("L'heure de début doit être avant la fin", "error");
-    return;
-  }
+  if (!subjectId || !day || !startTime || !endTime) { showToast('Tous les champs requis.', 'error'); return; }
+  if (startTime >= endTime) { showToast('Heure de début invalide.', 'error'); return; }
 
-  let schedule = getData("edu_schedule");
-  schedule.push({ id: genId(), subjectId, day, start, end });
-  saveData("edu_schedule", schedule);
-  closeModal("modal-schedule");
+  var res = await api.schedule.create({ subjectId: subjectId, day: day, startTime: startTime, endTime: endTime });
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast('Cours ajouté ✅');
+  closeModal('modal-schedule');
   renderSchedule();
-  showToast("Cours ajouté ✅");
 }
 
-function deleteScheduleSlot(id) {
-  if (!confirmDelete("Supprimer ce cours ?")) return;
-  let schedule = getData("edu_schedule");
-  schedule = schedule.filter((s) => s.id !== id);
-  saveData("edu_schedule", schedule);
+async function deleteSlot(id) {
+  if (!confirmDelete('Supprimer ce cours ?')) return;
+  var res = await api.schedule.remove(id);
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast('Cours supprimé.');
   renderSchedule();
-  showToast("Cours supprimé");
 }
