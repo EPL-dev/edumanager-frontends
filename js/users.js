@@ -1,145 +1,108 @@
-// =============================================
-//  users.js — Gestion des comptes utilisateurs
-//  Accessible uniquement au superadmin
-// =============================================
-
-function renderUsers() {
-  const tbody = document.getElementById('users-tbody');
-  if (!tbody) return;
-
+// users.js — MySQL version
  
-  const users   = getData('edu_users');
-  const current = getCurrentUser();
-
-  const roleLabels = { superadmin: '👑 Super Admin', admin: '🔑 Admin', etudiant: '🎓 Étudiant' };
-  const roleColors = {
-    superadmin: 'background:rgba(251,191,36,0.12);color:#fbbf24',
-    admin:      'background:rgba(59,130,246,0.12);color:var(--primary)',
-    etudiant:   'background:rgba(34,197,94,0.12);color:var(--green)'
-  };
-
-  tbody.innerHTML = users.map((u, i) => {
-    const isSelf  = u.id === current.id;
-    const canEdit = !isSelf; // ne peut pas se supprimer soi-même
-    return `
-      <tr>
-        <td>${i + 1}</td>
-        <td><code style="font-family:var(--mono);color:var(--primary)">${u.username}</code></td>
-        <td>${u.nom || '–'}</td>
-        <td><span class="badge" style="${roleColors[u.role] || ''}">${roleLabels[u.role] || u.role}</span></td>
-        <td>${u.email || '–'}</td>
-        <td>${u.createdAt || '–'}</td>
-        <td>
-          ${isSelf
-            ? '<span style="color:var(--text-muted);font-size:0.78rem">Compte actuel</span>'
-            : `<button class="btn-icon edit" onclick="editUser(${u.id})"><i class="fas fa-pen"></i></button>
-               <button class="btn-icon del"  onclick="deleteUser(${u.id})"><i class="fas fa-trash"></i></button>`
-          }
-        </td>
-      </tr>
-    `;
+async function renderUsers() {
+  var tbody = document.getElementById('users-tbody');
+  if (!tbody) return;
+  showLoading(tbody, 7);
+ 
+  var res  = await api.users.list();
+  var user = getCurrentUser();
+ 
+  if (!res.success) { tbody.innerHTML = emptyRow(7, 'Erreur : ' + res.message); return; }
+ 
+  var labels = { superadmin: '👑 Super Admin', admin: '🔑 Admin', etudiant: '🎓 Étudiant' };
+  var colors = { superadmin: 'badge-sa', admin: 'badge-ad', etudiant: 'badge-et' };
+ 
+  tbody.innerHTML = res.users.map(function(u, i) {
+    var isSelf  = u.id === user.id;
+    var linked  = (u.studentNom && u.studentPrenom) ? u.studentNom + ' ' + u.studentPrenom : '–';
+    return '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td><code style="font-family:monospace;color:var(--blue)">' + escHtml(u.username) + '</code></td>' +
+      '<td>' + escHtml(u.nom || '–') + '</td>' +
+      '<td><span class="badge ' + (colors[u.role] || '') + '">' + (labels[u.role] || u.role) + '</span></td>' +
+      '<td>' + escHtml(linked) + '</td>' +
+      '<td>' + (u.createdAt ? new Date(u.createdAt).toLocaleDateString('fr-FR') : '–') + '</td>' +
+      '<td>' + (isSelf
+        ? '<em style="color:var(--muted);font-size:.78rem">Vous</em>'
+        : '<button class="btn-icon edit" onclick="openEditUser(' + u.id + ')"><i class="fas fa-pen"></i></button>' +
+          '<button class="btn-icon del"  onclick="deleteUser(' + u.id + ')"><i class="fas fa-trash"></i></button>'
+      ) + '</td></tr>';
   }).join('');
 }
-
-function openUserModal(id = null) {
-  document.getElementById('user-id').value       = '';
-  document.getElementById('user-username').value = '';
-  document.getElementById('user-nom').value      = '';
-  document.getElementById('user-email').value    = '';
-  document.getElementById('user-password').value = '';
-  document.getElementById('user-role').value     = 'etudiant';
-  document.getElementById('modal-user-title').textContent = 'Ajouter un compte';
-  document.getElementById('user-password-hint').textContent = '';
+ 
+function openUserModal() {
+  ['user-id','user-username','user-nom','user-email','user-password'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('user-role').value = 'etudiant';
+  setEl('modal-user-title', 'Ajouter un compte');
+  setEl('user-password-hint', '');
+  toggleStudentLink('etudiant');
   openModal('modal-user');
 }
-
-function editUser(id) {
  
-  const users = getData('edu_users');
-  const u     = users.find(x => x.id === id);
+async function openEditUser(id) {
+  var res = await api.users.list();
+  if (!res.success) return;
+  var u = res.users.find(function(x) { return x.id === id; });
   if (!u) return;
-
+ 
   document.getElementById('user-id').value       = u.id;
   document.getElementById('user-username').value = u.username;
   document.getElementById('user-nom').value      = u.nom || '';
   document.getElementById('user-email').value    = u.email || '';
   document.getElementById('user-password').value = '';
   document.getElementById('user-role').value     = u.role;
-  document.getElementById('modal-user-title').textContent = 'Modifier le compte';
-  document.getElementById('user-password-hint').textContent = 'Laisser vide pour ne pas changer le mot de passe';
+  setEl('modal-user-title', 'Modifier le compte');
+  setEl('user-password-hint', 'Laisser vide = mot de passe inchangé');
+  toggleStudentLink(u.role);
+  if (u.role === 'etudiant') await fillStudentLinkSelect(u.studentId);
   openModal('modal-user');
 }
-
-function saveUser() {
-  const id       = document.getElementById('user-id').value;
-  const username = document.getElementById('user-username').value.trim();
-  const nom      = document.getElementById('user-nom').value.trim();
-  const email    = document.getElementById('user-email').value.trim();
-  const password = document.getElementById('user-password').value;
-  const role     = document.getElementById('user-role').value;
-
-  if (!username || !nom) {
-    showToast('Nom d\'utilisateur et nom complet requis', 'error');
-    return;
-  }
-
-  let users = getData('edu_users');
-
-  if (id) {
-    // Modifier
-    const idx = users.findIndex(u => u.id == id);
-    if (idx === -1) return;
-
-    // Vérifier doublon username (sauf soi-même)
-    if (users.find(u => u.username === username && u.id != id)) {
-      showToast('Ce nom d\'utilisateur est déjà pris', 'error');
-      return;
-    }
-
-    users[idx].username = username;
-    users[idx].nom      = nom;
-    users[idx].email    = email;
-    users[idx].role     = role;
-    if (password) users[idx].password = hashPassword(password);
-
-    showToast('Compte modifié ✅');
-  } else {
-    // Nouveau compte
-    if (!password || password.length < 4) {
-      showToast('Mot de passe requis (minimum 4 caractères)', 'error');
-      return;
-    }
-    if (users.find(u => u.username === username)) {
-      showToast('Ce nom d\'utilisateur est déjà pris', 'error');
-      return;
-    }
-
-    users.push({
-      id:        genId(),
-      username,
-      password:  hashPassword(password),
-      role,
-      nom,
-      email,
-      createdAt: new Date().toLocaleDateString('fr-FR')
-    });
-
-    showToast('Compte créé ✅');
-  }
-
-  saveData('edu_users', users);
+ 
+async function fillStudentLinkSelect(selected) {
+  var res = await api.students.list({ limit: 1000 });
+  fillSelect('user-student-link', res.students || [],
+    function(s) { return s.id; },
+    function(s) { return s.nom + ' ' + s.prenom + ' (' + s.matricule + ')'; },
+    '— Aucun étudiant lié —'
+  );
+  if (selected) document.getElementById('user-student-link').value = selected;
+}
+ 
+function toggleStudentLink(role) {
+  var row = document.getElementById('student-link-row');
+  if (row) row.style.display = (role === 'etudiant') ? '' : 'none';
+  if (role === 'etudiant') fillStudentLinkSelect(null);
+}
+ 
+async function saveUser() {
+  var id        = document.getElementById('user-id').value;
+  var username  = (document.getElementById('user-username').value || '').trim();
+  var nom       = (document.getElementById('user-nom').value || '').trim();
+  var email     = (document.getElementById('user-email').value || '').trim();
+  var password  = document.getElementById('user-password').value || '';
+  var role      = document.getElementById('user-role').value;
+  var studentId = role === 'etudiant' ? (document.getElementById('user-student-link')?.value || null) : null;
+ 
+  if (!username || !nom) { showToast('Identifiant et nom requis.', 'error'); return; }
+  if (!id && (!password || password.length < 4)) { showToast('Mot de passe requis (min 4 caractères).', 'error'); return; }
+ 
+  var data = { username: username, nom: nom, email: email, role: role, studentId: studentId || null };
+  if (password) data.password = password;
+ 
+  var res = id ? await api.users.update(id, data) : await api.users.create(data);
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast(id ? 'Compte modifié ✅' : 'Compte créé ✅');
   closeModal('modal-user');
   renderUsers();
 }
-
-function deleteUser(id) {
-  const current = getCurrentUser();
-  if (id === current.id) { showToast('Vous ne pouvez pas supprimer votre propre compte', 'error'); return; }
+ 
+async function deleteUser(id) {
   if (!confirmDelete('Supprimer ce compte utilisateur ?')) return;
-
-  let users = getData('edu_users');
-  users = users.filter(u => u.id !== id);
-  saveData('edu_users', users);
+  var res = await api.users.remove(id);
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast('Compte supprimé.');
   renderUsers();
-  showToast('Compte supprimé');
 }
