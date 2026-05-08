@@ -1,126 +1,93 @@
-// =============================================
-//  attendance.js — Gestion des Présences
-// =============================================
+// attendance.js — MySQL version
 
-// État temporaire de la séance en cours
-let currentAttendanceSession = {};
+var attSession = {};
 
-function initAttendanceFilters() {
-  populateSubjectSelect('att-subject-filter', true);
-  // Date du jour par défaut
-  const dateInput = document.getElementById('att-date-filter');
-  if (dateInput && !dateInput.value) {
-    dateInput.value = new Date().toISOString().split('T')[0];
-  }
+async function initAttFilters() {
+  await fillSubjectsSelect('att-subject-filter', true);
+  var d = document.getElementById('att-date-filter');
+  if (d && !d.value) d.value = new Date().toISOString().split('T')[0];
 }
 
-function renderAttendance() {
-  const tbody = document.getElementById('attendance-tbody');
+async function renderAttendance() {
+  var tbody = document.getElementById('attendance-tbody');
   if (!tbody) return;
+  showLoading(tbody, 4);
 
-  let records = getData('edu_attendance');
-  const subjectFilter = document.getElementById('att-subject-filter')?.value;
-  const dateFilter = document.getElementById('att-date-filter')?.value;
-  const subjects = getData('edu_subjects');
-  const students = getData('edu_students');
+  var params = {};
+  var subj = document.getElementById('att-subject-filter')?.value;
+  var date = document.getElementById('att-date-filter')?.value;
+  if (subj) params.subject = subj;
+  if (date) params.date    = date;
 
-  if (subjectFilter) records = records.filter(r => r.subjectId == subjectFilter);
-  if (dateFilter)    records = records.filter(r => r.date === dateFilter);
+  var res = await api.attendance.list(params);
+  if (!res.success) { tbody.innerHTML = emptyRow(4, 'Erreur chargement.'); return; }
+  if (!res.records.length) { tbody.innerHTML = emptyRow(4, 'Aucune présence enregistrée.'); return; }
 
-  if (records.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem;">Aucune présence enregistrée</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = records.map(r => {
-    const student = students.find(s => s.id == r.studentId);
-    const subject = subjects.find(s => s.id == r.subjectId);
-    return `
-      <tr>
-        <td><strong>${student ? student.nom + ' ' + student.prenom : '–'}</strong></td>
-        <td>${subject ? subject.name : '–'}</td>
-        <td>${r.date}</td>
-        <td>
-          <span class="badge badge-${r.status}">
-            ${r.status === 'present' ? '✅ Présent' : r.status === 'absent' ? '❌ Absent' : '⏰ Retard'}
-          </span>
-        </td>
-      </tr>
-    `;
+  var labels = { present: '✅ Présent', absent: '❌ Absent', retard: '⏰ Retard' };
+  tbody.innerHTML = res.records.map(function(r) {
+    return '<tr>' +
+      '<td>' + escHtml((r.nom || '') + ' ' + (r.prenom || '')) + '</td>' +
+      '<td>' + escHtml(r.subjectName || '–') + '</td>' +
+      '<td>' + r.date + '</td>' +
+      '<td><span class="badge badge-' + r.status + '">' + (labels[r.status] || r.status) + '</span></td></tr>';
   }).join('');
 }
 
-function openAttendanceSession() {
-  populateSubjectSelect('att-modal-subject');
-  const dateInput = document.getElementById('att-modal-date');
-  if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
-  currentAttendanceSession = {};
-  renderAttendanceStudentList();
+async function openAttendanceSession() {
+  await fillSubjectsSelect('att-modal-subject', false);
+  var d = document.getElementById('att-modal-date');
+  if (d) d.value = new Date().toISOString().split('T')[0];
+  attSession = {};
+  await buildAttList();
   openModal('modal-attendance');
 }
 
-function renderAttendanceStudentList() {
-  const container = document.getElementById('att-student-list');
+async function buildAttList() {
+  var container = document.getElementById('att-student-list');
   if (!container) return;
-  const students = getData('edu_students');
+  container.innerHTML = '<p style="color:var(--muted);padding:.5rem"><i class="fas fa-spinner fa-spin"></i> Chargement...</p>';
 
-  if (students.length === 0) {
-    container.innerHTML = '<p class="empty-msg">Aucun étudiant enregistré</p>';
+  var res = await api.students.list({ limit: 1000 });
+  if (!res.success || !res.students.length) {
+    container.innerHTML = '<p style="color:var(--muted);padding:.5rem">Aucun étudiant enregistré.</p>';
     return;
   }
 
-  container.innerHTML = students.map(s => `
-    <div class="att-student-row" id="att-row-${s.id}">
-      <span class="att-name">${s.nom} ${s.prenom} <small style="color:var(--text-muted)">(${s.matricule})</small></span>
-      <div class="att-btns">
-        <button class="att-btn present" onclick="setAttStatus(${s.id}, 'present', this)">✅ Présent</button>
-        <button class="att-btn absent"  onclick="setAttStatus(${s.id}, 'absent', this)">❌ Absent</button>
-        <button class="att-btn retard"  onclick="setAttStatus(${s.id}, 'retard', this)">⏰ Retard</button>
-      </div>
-    </div>
-  `).join('');
+  container.innerHTML = res.students.map(function(s) {
+    return '<div class="att-row" id="arow-' + s.id + '">' +
+      '<span class="att-name">' + escHtml(s.nom) + ' ' + escHtml(s.prenom) +
+      ' <small>(' + escHtml(s.matricule) + ')</small></span>' +
+      '<div class="att-btns">' +
+        '<button class="att-btn att-p" onclick="setAtt(' + s.id + ',\'present\',this)">✅ Présent</button>' +
+        '<button class="att-btn att-a" onclick="setAtt(' + s.id + ',\'absent\',this)">❌ Absent</button>' +
+        '<button class="att-btn att-r" onclick="setAtt(' + s.id + ',\'retard\',this)">⏰ Retard</button>' +
+      '</div></div>';
+  }).join('');
 }
 
-function setAttStatus(studentId, status, btn) {
-  currentAttendanceSession[studentId] = status;
-  // Mettre à jour l'UI
-  const row = document.getElementById(`att-row-${studentId}`);
+function setAtt(sid, status, btn) {
+  attSession[sid] = status;
+  var row = document.getElementById('arow-' + sid);
   if (!row) return;
-  row.querySelectorAll('.att-btn').forEach(b => {
-    b.className = `att-btn ${b.classList[1]}`;
-  });
-  btn.classList.add(`active-${status}`);
+  row.querySelectorAll('.att-btn').forEach(function(b) { b.classList.remove('att-active'); });
+  btn.classList.add('att-active');
 }
 
-function saveAttendance() {
-  const subjectId = document.getElementById('att-modal-subject')?.value;
-  const date = document.getElementById('att-modal-date')?.value;
+async function saveAttendance() {
+  var subjectId = document.getElementById('att-modal-subject')?.value;
+  var date      = document.getElementById('att-modal-date')?.value;
 
-  if (!subjectId || !date) {
-    showToast('Veuillez choisir une matière et une date', 'error');
-    return;
-  }
+  if (!subjectId || !date) { showToast('Matière et date requises.', 'error'); return; }
+  if (!Object.keys(attSession).length) { showToast('Marquez au moins un étudiant.', 'error'); return; }
 
-  if (Object.keys(currentAttendanceSession).length === 0) {
-    showToast('Veuillez marquer au moins un étudiant', 'error');
-    return;
-  }
-
-  let records = getData('edu_attendance');
-
-  // Supprimer les enregistrements existants pour cette séance
-  records = records.filter(r => !(r.subjectId == subjectId && r.date === date));
-
-  // Ajouter les nouveaux
-  const students = getData('edu_students');
-  students.forEach(s => {
-    const status = currentAttendanceSession[s.id] || 'absent'; // Absent par défaut
-    records.push({ id: genId(), studentId: s.id, subjectId, date, status });
+  var records = Object.keys(attSession).map(function(sid) {
+    return { studentId: sid, status: attSession[sid] };
   });
 
-  saveData('edu_attendance', records);
+  var res = await api.attendance.saveSession({ subjectId: subjectId, date: date, records: records });
+  if (!res.success) { showToast(res.message, 'error'); return; }
+
+  showToast('Séance enregistrée (' + records.length + ' étudiants) ✅');
   closeModal('modal-attendance');
   renderAttendance();
-  updateDashboard();
-  showToast('Séance enregistrée ✅');
 }
