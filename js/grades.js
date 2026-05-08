@@ -1,195 +1,109 @@
-// =============================================
-//  grades.js — Notes, Moyennes & Classement
-// =============================================
+// grades.js — MySQL version
 
-function initGradeFilters() {
-  populateSubjectSelect('grade-subject-filter', true);
-  populateStudentSelect('grade-student');
-  populateSubjectSelect('grade-subject');
+async function initGradeFilters() {
+  await fillSubjectsSelect('grade-subject-filter', true);
+  await fillSubjectsSelect('grade-subject', false);
+  await fillStudentsSelect('grade-student');
 }
 
-function renderGrades() {
-  const tbody = document.getElementById('grades-tbody');
+async function renderGrades() {
+  var tbody = document.getElementById('grades-tbody');
   if (!tbody) return;
+  showLoading(tbody, 5);
 
-  let grades = getData('edu_grades');
-  const students = getData('edu_students');
-  const subjects = getData('edu_subjects');
-  const isAdmin = document.body.classList.contains('role-admin');
+  var params = {};
+  var sem  = document.getElementById('grade-sem-filter')?.value;
+  var subj = document.getElementById('grade-subject-filter')?.value;
+  if (sem)  params.semester = sem;
+  if (subj) params.subject  = subj;
 
-  const semFilter  = document.getElementById('grade-sem-filter')?.value;
-  const subjFilter = document.getElementById('grade-subject-filter')?.value;
+  var res = await api.grades.list(params);
+  if (!res.success) { tbody.innerHTML = emptyRow(5, 'Erreur chargement.'); return; }
+  if (!res.grades.length) { tbody.innerHTML = emptyRow(5, 'Aucune note enregistrée.'); return; }
 
-  if (semFilter)  grades = grades.filter(g => g.semester === semFilter);
-  if (subjFilter) grades = grades.filter(g => g.subjectId == subjFilter);
-
-  if (grades.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">Aucune note enregistrée</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = grades.map(g => {
-    const student = students.find(s => s.id == g.studentId);
-    const subject = subjects.find(s => s.id == g.subjectId);
-    const color = g.value >= 10 ? 'var(--green)' : 'var(--red)';
-    return `
-      <tr>
-        <td>${student ? student.nom + ' ' + student.prenom : '–'}</td>
-        <td>${subject ? subject.name : '–'}</td>
-        <td><strong style="color:${color};font-size:1rem">${g.value}/20</strong></td>
-        <td><span class="badge" style="background:rgba(59,130,246,0.1);color:var(--primary)">${g.semester}</span></td>
-        <td class="admin-only" style="${isAdmin ? '' : 'display:none'}">
-          <button class="btn-icon edit" onclick="editGrade(${g.id})"><i class="fas fa-pen"></i></button>
-          <button class="btn-icon del" onclick="deleteGrade(${g.id})"><i class="fas fa-trash"></i></button>
-        </td>
-      </tr>
-    `;
+  tbody.innerHTML = res.grades.map(function(g) {
+    var c = parseFloat(g.value) >= 10 ? 'var(--green)' : 'var(--red)';
+    return '<tr>' +
+      '<td>' + escHtml((g.nom || '') + ' ' + (g.prenom || '')) + '</td>' +
+      '<td>' + escHtml(g.subjectName || '–') + '</td>' +
+      '<td><strong style="color:' + c + ';font-size:1rem">' + g.value + '/20</strong></td>' +
+      '<td><span class="badge badge-sem">' + g.semester + '</span></td>' +
+      '<td>' +
+        '<button class="btn-icon edit" onclick="editGrade(' + g.id + ',' + g.studentId + ',' + g.subjectId + ',' + g.value + ',\'' + g.semester + '\')"><i class="fas fa-pen"></i></button>' +
+        '<button class="btn-icon del"  onclick="deleteGrade(' + g.id + ')"><i class="fas fa-trash"></i></button>' +
+      '</td></tr>';
   }).join('');
 
-  renderRanking();
+  await renderRanking();
 }
 
-function renderRanking() {
-  const tbody = document.getElementById('ranking-tbody');
+async function renderRanking() {
+  var tbody = document.getElementById('ranking-tbody');
   if (!tbody) return;
+  showLoading(tbody, 4);
 
-  const grades   = getData('edu_grades');
-  const students = getData('edu_students');
-  const subjects = getData('edu_subjects');
+  var res = await api.grades.ranking();
+  if (!res.success || !res.ranking.length) { tbody.innerHTML = emptyRow(4, 'Aucun classement disponible.'); return; }
 
-  if (students.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:1rem;">Aucun étudiant</td></tr>`;
-    return;
-  }
-
-  // Calcul de la moyenne générale pondérée par coefficient
-  const ranking = students.map(student => {
-    const studentGrades = grades.filter(g => g.studentId == student.id);
-    let totalPoints = 0, totalCoeff = 0;
-
-    studentGrades.forEach(g => {
-      const subject = subjects.find(s => s.id == g.subjectId);
-      const coeff = subject ? subject.coeff : 1;
-      totalPoints += g.value * coeff;
-      totalCoeff  += coeff;
-    });
-
-    const avg = totalCoeff > 0 ? (totalPoints / totalCoeff) : null;
-    return { student, avg, gradesCount: studentGrades.length };
-  });
-
-  // Trier par moyenne décroissante
-  ranking.sort((a, b) => {
-    if (a.avg === null && b.avg === null) return 0;
-    if (a.avg === null) return 1;
-    if (b.avg === null) return -1;
-    return b.avg - a.avg;
-  });
-
-  const medals = ['🥇', '🥈', '🥉'];
-
-  tbody.innerHTML = ranking.map((r, i) => {
-    const avgDisplay = r.avg !== null ? r.avg.toFixed(2) + '/20' : 'N/A';
-    const mention = getAppreciation(r.avg);
-    const rankClass = i < 3 ? `rank-${i + 1}` : '';
-    const rankIcon = i < 3 ? medals[i] : `${i + 1}`;
-    const color = r.avg === null ? '' : r.avg >= 10 ? 'color:var(--green)' : 'color:var(--red)';
-    return `
-      <tr class="${rankClass}">
-        <td style="font-size:1.1rem">${rankIcon}</td>
-        <td><strong>${r.student.nom} ${r.student.prenom}</strong></td>
-        <td style="${color};font-weight:700">${avgDisplay}</td>
-        <td><span style="font-size:0.82rem;color:var(--text-muted)">${mention}</span></td>
-      </tr>
-    `;
+  var medals = ['🥇', '🥈', '🥉'];
+  tbody.innerHTML = res.ranking.map(function(r, i) {
+    var avg = r.average !== null ? parseFloat(r.average).toFixed(2) : null;
+    var c   = avg !== null ? (parseFloat(avg) >= 10 ? 'color:var(--green)' : 'color:var(--red)') : '';
+    return '<tr class="' + (i < 3 ? 'rank-' + (i + 1) : '') + '">' +
+      '<td style="font-size:1.1rem">' + (i < 3 ? medals[i] : (i + 1)) + '</td>' +
+      '<td>' + escHtml((r.nom || '') + ' ' + (r.prenom || '')) + '</td>' +
+      '<td style="' + c + ';font-weight:700">' + (avg !== null ? avg + '/20' : 'N/A') + '</td>' +
+      '<td style="font-size:.82rem">' + (avg !== null ? getAppreciation(parseFloat(avg)) : '–') + '</td></tr>';
   }).join('');
-}
-
-function getAppreciation(avg) {
-  if (avg === null) return '–';
-  if (avg >= 16) return '🌟 Très bien';
-  if (avg >= 14) return '👍 Bien';
-  if (avg >= 12) return '✅ Assez bien';
-  if (avg >= 10) return '📘 Passable';
-  return '❌ Insuffisant';
 }
 
 function openGradeModal() {
-  document.getElementById('grade-id').value = '';
+  document.getElementById('grade-id').value    = '';
   document.getElementById('grade-value').value = '';
-  document.getElementById('grade-sem').value = 'S1';
-  populateStudentSelect('grade-student');
-  populateSubjectSelect('grade-subject');
-  document.getElementById('modal-grade-title').textContent = 'Ajouter une note';
+  document.getElementById('grade-sem').value   = 'S1';
+  setEl('modal-grade-title', 'Ajouter une note');
   openModal('modal-grade');
 }
 
-function editGrade(id) {
-  const grades = getData('edu_grades');
-  const g = grades.find(x => x.id === id);
-  if (!g) return;
-  populateStudentSelect('grade-student');
-  populateSubjectSelect('grade-subject');
-  document.getElementById('grade-id').value = g.id;
-  document.getElementById('grade-student').value = g.studentId;
-  document.getElementById('grade-subject').value = g.subjectId;
-  document.getElementById('grade-value').value = g.value;
-  document.getElementById('grade-sem').value = g.semester;
-  document.getElementById('modal-grade-title').textContent = 'Modifier la note';
+function editGrade(id, studentId, subjectId, value, semester) {
+  document.getElementById('grade-id').value      = id;
+  document.getElementById('grade-student').value = studentId;
+  document.getElementById('grade-subject').value = subjectId;
+  document.getElementById('grade-value').value   = value;
+  document.getElementById('grade-sem').value     = semester;
+  setEl('modal-grade-title', 'Modifier la note');
   openModal('modal-grade');
 }
 
-function saveGrade() {
-  const id        = document.getElementById('grade-id').value;
-  const studentId = document.getElementById('grade-student').value;
-  const subjectId = document.getElementById('grade-subject').value;
-  const value     = parseFloat(document.getElementById('grade-value').value);
-  const semester  = document.getElementById('grade-sem').value;
+async function saveGrade() {
+  var id        = document.getElementById('grade-id').value;
+  var studentId = document.getElementById('grade-student').value;
+  var subjectId = document.getElementById('grade-subject').value;
+  var value     = parseFloat(document.getElementById('grade-value').value);
+  var semester  = document.getElementById('grade-sem').value;
 
   if (!studentId || !subjectId || isNaN(value) || value < 0 || value > 20) {
-    showToast('Données invalides (note entre 0 et 20)', 'error');
-    return;
+    showToast('Données invalides (note entre 0 et 20).', 'error'); return;
   }
 
-  let grades = getData('edu_grades');
+  var data = { studentId: studentId, subjectId: subjectId, value: value, semester: semester };
+  var res  = id ? await api.grades.update(id, data) : await api.grades.create(data);
 
-  if (id) {
-    const idx = grades.findIndex(g => g.id == id);
-    if (idx !== -1) grades[idx] = { ...grades[idx], studentId, subjectId, value, semester };
-    showToast('Note modifiée ✅');
-  } else {
-    grades.push({ id: genId(), studentId, subjectId, value, semester });
-    showToast('Note ajoutée ✅');
-  }
-
-  saveData('edu_grades', grades);
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast(id ? 'Note modifiée ✅' : 'Note ajoutée ✅');
   closeModal('modal-grade');
   renderGrades();
-  updateDashboard();
 }
 
-function deleteGrade(id) {
+async function deleteGrade(id) {
   if (!confirmDelete('Supprimer cette note ?')) return;
-  let grades = getData('edu_grades');
-  grades = grades.filter(g => g.id !== id);
-  saveData('edu_grades', grades);
+  var res = await api.grades.remove(id);
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast('Note supprimée.');
   renderGrades();
-  updateDashboard();
-  showToast('Note supprimée');
 }
 
-// Remplir un <select> avec les étudiants
-function populateStudentSelect(selectId) {
-  const select = document.getElementById(selectId);
-  if (!select) return;
-  const students = getData('edu_students');
-  const current = select.value;
-  select.innerHTML = '';
-  students.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.id;
-    opt.textContent = s.nom + ' ' + s.prenom;
-    select.appendChild(opt);
-  });
-  if (current) select.value = current;
+async function fillStudentsSelect(selId) {
+  var res = await api.students.list({ limit: 1000 });
+  fillSelect(selId, res.students || [], function(s) { return s.id; }, function(s) { return s.nom + ' ' + s.prenom; }, null);
 }
