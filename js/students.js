@@ -1,113 +1,91 @@
-// =============================================
-//  students.js — Gestion des Étudiants
-// =============================================
+// students.js — MySQL version
 
-function renderStudents() {
-  const tbody = document.getElementById('students-tbody');
+var studentPage   = 1;
+var studentSearch = '';
+
+async function renderStudents() {
+  var tbody = document.getElementById('students-tbody');
   if (!tbody) return;
+  showLoading(tbody, 5);
 
-  let students = getData('edu_students');
-  const search = (document.getElementById('search-student')?.value || '').toLowerCase();
+  var res = await api.students.list({ page: studentPage, limit: CONFIG.PAGE_SIZE, q: studentSearch });
+  if (!res.success) { tbody.innerHTML = emptyRow(5, 'Erreur : ' + res.message); return; }
 
-  if (search) {
-    students = students.filter(s =>
-      s.nom.toLowerCase().includes(search) ||
-      s.prenom.toLowerCase().includes(search) ||
-      s.matricule.toLowerCase().includes(search)
-    );
-  }
+  var students = res.students || [];
+  var user     = getCurrentUser();
+  var isAdmin  = (user.role === 'admin' || user.role === 'superadmin');
 
-  if (students.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">
-      ${search ? 'Aucun résultat trouvé' : 'Aucun étudiant enregistré'}</td></tr>`;
-    return;
-  }
-
-  const isAdmin = document.body.classList.contains('role-admin');
-
-  tbody.innerHTML = students.map((s, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td><code style="font-family:var(--mono);color:var(--primary);font-size:0.8rem">${s.matricule}</code></td>
-      <td><strong>${s.nom}</strong> ${s.prenom}</td>
-      <td>
-        <span class="badge" style="${s.sexe === 'M' ? 'background:rgba(59,130,246,0.1);color:var(--primary)' : 'background:rgba(168,85,247,0.1);color:var(--purple)'}">
-          ${s.sexe === 'M' ? '♂ Masculin' : '♀ Féminin'}
-        </span>
-      </td>
-      <td class="admin-only" style="${isAdmin ? '' : 'display:none'}">
-        <button class="btn-icon edit" onclick="editStudent(${s.id})"><i class="fas fa-pen"></i></button>
-        <button class="btn-icon del" onclick="deleteStudent(${s.id})"><i class="fas fa-trash"></i></button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-function openStudentModal(id = null) {
-  document.getElementById('student-id').value = '';
-  document.getElementById('student-matricule').value = '';
-  document.getElementById('student-nom').value = '';
-  document.getElementById('student-prenom').value = '';
-  document.getElementById('student-sexe').value = 'M';
-  document.getElementById('modal-student-title').textContent = 'Ajouter un étudiant';
-  openModal('modal-student');
-}
-
-function editStudent(id) {
-  const students = getData('edu_students');
-  const s = students.find(x => x.id === id);
-  if (!s) return;
-
-  document.getElementById('student-id').value = s.id;
-  document.getElementById('student-matricule').value = s.matricule;
-  document.getElementById('student-nom').value = s.nom;
-  document.getElementById('student-prenom').value = s.prenom;
-  document.getElementById('student-sexe').value = s.sexe;
-  document.getElementById('modal-student-title').textContent = 'Modifier l\'étudiant';
-  openModal('modal-student');
-}
-
-function saveStudent() {
-  const id = document.getElementById('student-id').value;
-  const matricule = document.getElementById('student-matricule').value.trim();
-  const nom = document.getElementById('student-nom').value.trim();
-  const prenom = document.getElementById('student-prenom').value.trim();
-  const sexe = document.getElementById('student-sexe').value;
-
-  if (!matricule || !nom || !prenom) {
-    showToast('Veuillez remplir tous les champs', 'error');
-    return;
-  }
-
-  let students = getData('edu_students');
-
-  if (id) {
-    // Modifier
-    const idx = students.findIndex(s => s.id == id);
-    if (idx !== -1) students[idx] = { ...students[idx], matricule, nom, prenom, sexe };
-    showToast('Étudiant modifié ✅');
+  if (!students.length) {
+    tbody.innerHTML = emptyRow(5, studentSearch ? 'Aucun résultat pour "' + studentSearch + '"' : 'Aucun étudiant enregistré.');
   } else {
-    // Vérifier matricule unique
-    if (students.find(s => s.matricule === matricule)) {
-      showToast('Ce matricule existe déjà', 'error');
-      return;
-    }
-    students.push({ id: genId(), matricule, nom, prenom, sexe });
-    showToast('Étudiant ajouté ✅');
+    tbody.innerHTML = students.map(function(s, i) {
+      return '<tr>' +
+        '<td>' + ((studentPage - 1) * CONFIG.PAGE_SIZE + i + 1) + '</td>' +
+        '<td><code style="font-family:monospace;color:var(--blue);font-size:.8rem">' + escHtml(s.matricule) + '</code></td>' +
+        '<td><strong>' + escHtml(s.nom) + '</strong> ' + escHtml(s.prenom) + '</td>' +
+        '<td><span class="badge ' + (s.sexe === 'M' ? 'badge-m' : 'badge-f') + '">' + (s.sexe === 'M' ? '♂ M' : '♀ F') + '</span></td>' +
+        '<td>' + (isAdmin
+          ? '<button class="btn-icon edit" onclick="editStudent(' + s.id + ')"><i class="fas fa-pen"></i></button>' +
+            '<button class="btn-icon del"  onclick="deleteStudent(' + s.id + ')"><i class="fas fa-trash"></i></button>'
+          : '–') + '</td></tr>';
+    }).join('');
   }
 
-  saveData('edu_students', students);
+  var pages = res.pages || 1;
+  var total = res.total || 0;
+  setEl('page-info', 'Page ' + studentPage + ' / ' + pages + ' — ' + total + ' étudiant' + (total > 1 ? 's' : ''));
+  var bp = document.getElementById('btn-prev');
+  var bn = document.getElementById('btn-next');
+  if (bp) bp.disabled = (studentPage <= 1);
+  if (bn) bn.disabled = (studentPage >= pages);
+}
+
+function searchStudents() { studentSearch = document.getElementById('search-student')?.value || ''; studentPage = 1; renderStudents(); }
+function prevStudentPage() { if (studentPage > 1) { studentPage--; renderStudents(); } }
+function nextStudentPage() { studentPage++; renderStudents(); }
+
+function openStudentModal() {
+  ['student-id','student-matricule','student-nom','student-prenom'].forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+  var sx = document.getElementById('student-sexe'); if (sx) sx.value = 'M';
+  setEl('modal-student-title', 'Ajouter un étudiant');
+  openModal('modal-student');
+}
+
+async function editStudent(id) {
+  var res = await api.students.get(id);
+  if (!res.success) { showToast('Erreur chargement.', 'error'); return; }
+  var s = res.student;
+  document.getElementById('student-id').value        = s.id;
+  document.getElementById('student-matricule').value = s.matricule;
+  document.getElementById('student-nom').value       = s.nom;
+  document.getElementById('student-prenom').value    = s.prenom;
+  document.getElementById('student-sexe').value      = s.sexe;
+  setEl('modal-student-title', 'Modifier l\'étudiant');
+  openModal('modal-student');
+}
+
+async function saveStudent() {
+  var id        = document.getElementById('student-id').value;
+  var matricule = document.getElementById('student-matricule').value.trim();
+  var nom       = document.getElementById('student-nom').value.trim();
+  var prenom    = document.getElementById('student-prenom').value.trim();
+  var sexe      = document.getElementById('student-sexe').value;
+
+  if (!matricule || !nom || !prenom) { showToast('Tous les champs sont requis.', 'error'); return; }
+
+  var data = { matricule: matricule, nom: nom, prenom: prenom, sexe: sexe };
+  var res  = id ? await api.students.update(id, data) : await api.students.create(data);
+
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast(id ? 'Étudiant modifié ✅' : 'Étudiant ajouté ✅');
   closeModal('modal-student');
   renderStudents();
-  updateDashboard();
 }
 
-function deleteStudent(id) {
-  if (!confirmDelete('Supprimer cet étudiant ? Cette action est irréversible.')) return;
-  let students = getData('edu_students');
-  students = students.filter(s => s.id !== id);
-  saveData('edu_students', students);
+async function deleteStudent(id) {
+  if (!confirmDelete('Supprimer cet étudiant ? Ses notes et présences seront supprimées.')) return;
+  var res = await api.students.remove(id);
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast('Étudiant supprimé.');
   renderStudents();
-  updateDashboard();
-  showToast('Étudiant supprimé');
 }
