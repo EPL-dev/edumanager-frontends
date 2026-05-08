@@ -7,7 +7,7 @@ function renderUsers() {
   const tbody = document.getElementById('users-tbody');
   if (!tbody) return;
 
-  initUsers();
+ 
   const users   = getData('edu_users');
   const current = getCurrentUser();
 
@@ -54,7 +54,7 @@ function openUserModal(id = null) {
 }
 
 function editUser(id) {
-  initUsers();
+ 
   const users = getData('edu_users');
   const u     = users.find(x => x.id === id);
   if (!u) return;
@@ -83,7 +83,6 @@ function saveUser() {
     return;
   }
 
-  initUsers();
   let users = getData('edu_users');
 
   if (id) {
@@ -138,7 +137,6 @@ function deleteUser(id) {
   if (id === current.id) { showToast('Vous ne pouvez pas supprimer votre propre compte', 'error'); return; }
   if (!confirmDelete('Supprimer ce compte utilisateur ?')) return;
 
-  initUsers();
   let users = getData('edu_users');
   users = users.filter(u => u.id !== id);
   saveData('edu_users', users);
