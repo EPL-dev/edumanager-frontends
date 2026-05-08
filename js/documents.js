@@ -1,30 +1,26 @@
-// =============================================
-//  documents.js — Documents
-// =============================================
+// documents.js — MySQL version
 
-function renderDocuments() {
-  const container = document.getElementById('documents-list');
-  if (!container) return;
-  const documents = getData('edu_documents');
-  const isAdmin   = document.body.classList.contains('role-admin');
+async function renderDocuments() {
+  var c = document.getElementById('documents-list');
+  if (!c) return;
+  c.innerHTML = '<p style="color:var(--muted);padding:1rem"><i class="fas fa-spinner fa-spin"></i> Chargement...</p>';
 
-  if (documents.length === 0) {
-    container.innerHTML = '<p class="empty-msg" style="padding:1rem">Aucun document disponible</p>';
-    return;
-  }
+  var res     = await api.documents.list();
+  var user    = getCurrentUser();
+  var isAdmin = (user.role === 'admin' || user.role === 'superadmin');
 
-  container.innerHTML = documents.map(d => {
-    const icons = { pdf: '📄', doc: '📝', autre: '📁' };
-    return `<div class="doc-card">
-      <div class="doc-icon ${d.type}">${icons[d.type] || '📁'}</div>
-      <div class="doc-name">${d.name}</div>
-      <div class="doc-actions">
-        <a href="${d.url}" target="_blank" class="btn-primary" style="font-size:0.78rem;padding:0.4rem 0.8rem">
-          <i class="fas fa-download"></i> Télécharger
-        </a>
-        ${isAdmin ? `<button class="btn-icon del" onclick="deleteDocument(${d.id})"><i class="fas fa-trash"></i></button>` : ''}
-      </div>
-    </div>`;
+  if (!res.success) { c.innerHTML = '<p style="color:var(--muted);padding:1rem">Erreur chargement.</p>'; return; }
+  if (!res.documents.length) { c.innerHTML = '<p style="color:var(--muted);padding:1rem">Aucun document disponible.</p>'; return; }
+
+  var icons = { pdf: '📄', doc: '📝', autre: '📁' };
+  c.innerHTML = res.documents.map(function(d) {
+    return '<div class="doc-card">' +
+      '<div class="doc-icon">' + (icons[d.type] || '📁') + '</div>' +
+      '<div class="doc-name">' + escHtml(d.name) + '</div>' +
+      '<div class="doc-actions">' +
+        '<a href="' + escHtml(d.url) + '" target="_blank" rel="noopener" class="btn-primary sm"><i class="fas fa-download"></i> Télécharger</a>' +
+        (isAdmin ? '<button class="btn-icon del" onclick="deleteDocument(' + d.id + ')"><i class="fas fa-trash"></i></button>' : '') +
+      '</div></div>';
   }).join('');
 }
 
@@ -35,22 +31,25 @@ function openDocumentModal() {
   openModal('modal-document');
 }
 
-function saveDocument() {
-  const name = document.getElementById('doc-name').value.trim();
-  const url  = document.getElementById('doc-url').value.trim();
-  const type = document.getElementById('doc-type').value;
-  if (!name || !url) { showToast('Nom et lien requis', 'error'); return; }
-  const docs = getData('edu_documents');
-  docs.push({ id: genId(), name, url, type });
-  saveData('edu_documents', docs);
+async function saveDocument() {
+  var name = document.getElementById('doc-name').value.trim();
+  var url  = document.getElementById('doc-url').value.trim();
+  var type = document.getElementById('doc-type').value;
+
+  if (!name || !url) { showToast('Nom et lien requis.', 'error'); return; }
+  try { new URL(url); } catch(e) { showToast('URL invalide.', 'error'); return; }
+
+  var res = await api.documents.create({ name: name, url: url, type: type });
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast('Document ajouté ✅');
   closeModal('modal-document');
   renderDocuments();
-  showToast('Document ajouté ✅');
 }
 
-function deleteDocument(id) {
+async function deleteDocument(id) {
   if (!confirmDelete('Supprimer ce document ?')) return;
-  saveData('edu_documents', getData('edu_documents').filter(d => d.id !== id));
+  var res = await api.documents.remove(id);
+  if (!res.success) { showToast(res.message, 'error'); return; }
+  showToast('Document supprimé.');
   renderDocuments();
-  showToast('Document supprimé');
 }
