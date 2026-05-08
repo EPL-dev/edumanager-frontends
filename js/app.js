@@ -1,273 +1,186 @@
-// =============================================
-//  app.js — Logique principale (v2)
-// =============================================
+// app.js — Logique principale (MySQL version)
 
-document.addEventListener('DOMContentLoaded', () => {
-  const user = checkAuth();
+document.addEventListener('DOMContentLoaded', async function() {
+  var user = checkAuth();
   if (!user) return;
 
   applyInterface(user);
-  applyMenuByRole(user);
-  initNavigation();
+  initNav();
   initSidebar();
-  updateDashboard();
+  await updateDashboard();
 });
 
-// Afficher/cacher les menus selon le rôle
-function applyMenuByRole(user) {
-  const isAdmin      = user.role === 'admin' || user.role === 'superadmin';
-  const isSuperAdmin = user.role === 'superadmin';
-  const isEtudiant   = user.role === 'etudiant';
-
-  // Éléments admin
-  document.querySelectorAll('.admin-only').forEach(el => {
-    el.style.display = isAdmin ? '' : 'none';
-  });
-
-  // Éléments superadmin
-  document.querySelectorAll('.superadmin-only').forEach(el => {
-    el.style.display = isSuperAdmin ? '' : 'none';
-  });
-
-  // Éléments étudiant uniquement
-  document.querySelectorAll('.student-visible').forEach(el => {
-    el.style.display = isEtudiant ? '' : 'none';
-  });
-}
-
-// Navigation
-function initNavigation() {
-  document.querySelectorAll('.nav-item[data-section]').forEach(item => {
-    item.addEventListener('click', (e) => {
+function initNav() {
+  document.querySelectorAll('.nav-item[data-section]').forEach(function(el) {
+    el.addEventListener('click', function(e) {
       e.preventDefault();
-      const section = item.getAttribute('data-section');
-      const title   = item.querySelector('span')?.textContent || section;
-      navigateTo(section, title);
+      var id    = el.getAttribute('data-section');
+      var span  = el.querySelector('span');
+      navigateTo(id, span ? span.textContent : id);
       closeSidebar();
     });
   });
 }
 
-function navigateTo(sectionId, title) {
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-
-  const activeNav     = document.querySelector(`.nav-item[data-section="${sectionId}"]`);
-  const activeSection = document.getElementById(`section-${sectionId}`);
-
-  if (activeNav)     activeNav.classList.add('active');
-  if (activeSection) activeSection.classList.add('active');
-
-  const topbarTitle = document.getElementById('topbar-title');
-  if (topbarTitle) topbarTitle.textContent = title;
-
-  loadSectionData(sectionId);
+function navigateTo(id, title) {
+  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  document.querySelectorAll('.section').forEach(function(s) { s.classList.remove('active'); s.style.display = 'none'; });
+  var nav = document.querySelector('.nav-item[data-section="' + id + '"]');
+  if (nav) nav.classList.add('active');
+  var sec = document.getElementById('section-' + id);
+  if (sec) { sec.style.display = 'block'; sec.classList.add('active'); }
+  var tt = document.getElementById('topbar-title');
+  if (tt) tt.textContent = title || id;
+  loadSection(id);
 }
 
-function loadSectionData(sectionId) {
-  switch(sectionId) {
-    case 'dashboard':     updateDashboard(); break;
-    case 'students':      renderStudents(); break;
-    case 'subjects':      renderSubjects(); break;
-    case 'attendance':    initAttendanceFilters(); renderAttendance(); break;
-    case 'grades':        initGradeFilters(); renderGrades(); renderRanking(); break;
-    case 'schedule':      renderSchedule(); break;
-    case 'announcements': renderAnnouncements(); break;
-    case 'documents':     renderDocuments(); break;
-    case 'users':         renderUsers(); break;
-    case 'my-grades':     renderMyGrades(); break;
-    case 'my-attendance': renderMyAttendance(); break;
+async function loadSection(id) {
+  switch (id) {
+    case 'dashboard':     await updateDashboard(); break;
+    case 'students':      await renderStudents(); break;
+    case 'subjects':      await renderSubjects(); break;
+    case 'attendance':    await initAttFilters(); await renderAttendance(); break;
+    case 'grades':        await initGradeFilters(); await renderGrades(); await renderRanking(); break;
+    case 'schedule':      await renderSchedule(); break;
+    case 'announcements': await renderAnnouncements(); break;
+    case 'documents':     await renderDocuments(); break;
+    case 'users':         await renderUsers(); break;
+    case 'my-grades':     await renderMyGrades(); break;
+    case 'my-attendance': await renderMyAttendance(); break;
   }
 }
 
-// Sidebar mobile
 function initSidebar() {
-  const hamburger = document.getElementById('hamburger');
-  const closeBtn  = document.getElementById('sidebar-close');
-  if (hamburger) hamburger.addEventListener('click', () => document.getElementById('sidebar').classList.add('open'));
-  if (closeBtn)  closeBtn.addEventListener('click', closeSidebar);
+  var ham  = document.getElementById('hamburger');
+  var cls  = document.getElementById('sidebar-close');
+  var side = document.getElementById('sidebar');
+  if (ham && side) ham.addEventListener('click', function() { side.classList.add('open'); });
+  if (cls && side) cls.addEventListener('click', closeSidebar);
 }
-function closeSidebar() {
-  document.getElementById('sidebar')?.classList.remove('open');
-}
+function closeSidebar() { var s = document.getElementById('sidebar'); if (s) s.classList.remove('open'); }
 
-// ---- MES NOTES (vue étudiant) ----
-function renderMyGrades() {
-  const tbody   = document.getElementById('my-grades-tbody');
-  const avgEl   = document.getElementById('my-avg-display');
-  if (!tbody) return;
+// ── Dashboard ─────────────────────────────────────────
+async function updateDashboard() {
+  var res = await api.dashboard.stats();
+  if (!res.success) { showToast('Erreur chargement dashboard.', 'error'); return; }
 
-  const user     = getCurrentUser();
-  const students = getData('edu_students');
-  const grades   = getData('edu_grades');
-  const subjects = getData('edu_subjects');
-
-  // Trouver l'étudiant lié à ce compte (par nom)
-  const student = students.find(s =>
-    (s.nom + ' ' + s.prenom).toLowerCase() === (user.nom || '').toLowerCase()
-  );
-
-  if (!student) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem">
-      Votre profil étudiant n'est pas encore lié. Contactez l'administrateur.</td></tr>`;
-    if (avgEl) avgEl.textContent = '–';
-    return;
-  }
-
-  const myGrades = grades.filter(g => g.studentId == student.id);
-
-  if (myGrades.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem">Aucune note enregistrée</td></tr>`;
-    if (avgEl) avgEl.textContent = '–';
-    return;
-  }
-
-  tbody.innerHTML = myGrades.map(g => {
-    const subj  = subjects.find(s => s.id == g.subjectId);
-    const color = g.value >= 10 ? 'var(--green)' : 'var(--red)';
-    return `<tr>
-      <td>${subj ? subj.name : '–'}</td>
-      <td><strong style="color:${color}">${g.value}/20</strong></td>
-      <td><span class="badge" style="background:rgba(59,130,246,0.1);color:var(--primary)">${g.semester}</span></td>
-      <td>${getAppreciation(g.value)}</td>
-    </tr>`;
-  }).join('');
-
-  // Moyenne
-  let totalPts = 0, totalCoeff = 0;
-  myGrades.forEach(g => {
-    const subj  = subjects.find(s => s.id == g.subjectId);
-    const coeff = subj ? subj.coeff : 1;
-    totalPts  += g.value * coeff;
-    totalCoeff += coeff;
-  });
-  const avg = totalCoeff > 0 ? (totalPts / totalCoeff).toFixed(2) : '–';
-  if (avgEl) {
-    avgEl.textContent = avg !== '–' ? avg + '/20' : '–';
-    avgEl.style.color = avg >= 10 ? 'var(--green)' : 'var(--red)';
-  }
-}
-
-// ---- MES PRÉSENCES (vue étudiant) ----
-function renderMyAttendance() {
-  const tbody = document.getElementById('my-attendance-tbody');
-  if (!tbody) return;
-
-  const user       = getCurrentUser();
-  const students   = getData('edu_students');
-  const attendance = getData('edu_attendance');
-  const subjects   = getData('edu_subjects');
-
-  const student = students.find(s =>
-    (s.nom + ' ' + s.prenom).toLowerCase() === (user.nom || '').toLowerCase()
-  );
-
-  if (!student) {
-    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:2rem">
-      Profil étudiant non lié. Contactez l'administrateur.</td></tr>`;
-    return;
-  }
-
-  const myRecords = attendance.filter(a => a.studentId == student.id);
-
-  setEl('my-present-count', myRecords.filter(a => a.status === 'present').length);
-  setEl('my-retard-count',  myRecords.filter(a => a.status === 'retard').length);
-  setEl('my-absent-count',  myRecords.filter(a => a.status === 'absent').length);
-
-  if (myRecords.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:2rem">Aucun enregistrement</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = myRecords.map(r => {
-    const subj = subjects.find(s => s.id == r.subjectId);
-    return `<tr>
-      <td>${subj ? subj.name : '–'}</td>
-      <td>${r.date}</td>
-      <td><span class="badge badge-${r.status}">
-        ${r.status === 'present' ? '✅ Présent' : r.status === 'absent' ? '❌ Absent' : '⏰ Retard'}
-      </span></td>
-    </tr>`;
-  }).join('');
-}
-
-// ---- Dashboard ----
-function updateDashboard() {
-  const students      = getData('edu_students');
-  const subjects      = getData('edu_subjects');
-  const attendance    = getData('edu_attendance');
-  const grades        = getData('edu_grades');
-  const announcements = getData('edu_announcements');
-
-  setEl('stat-students', students.length);
-  setEl('stat-subjects', subjects.length);
-
-  if (attendance.length > 0) {
-    const rate = Math.round((attendance.filter(a => a.status === 'present').length / attendance.length) * 100);
-    setEl('stat-presence', rate + '%');
-  } else { setEl('stat-presence', 'N/A'); }
-
-  if (grades.length > 0) {
-    const avg = grades.reduce((s, g) => s + g.value, 0) / grades.length;
-    setEl('stat-avg', avg.toFixed(2) + '/20');
-  } else { setEl('stat-avg', 'N/A'); }
+  var st = res.stats;
+  setEl('stat-students', st.totalStudents || 0);
+  setEl('stat-subjects', st.totalSubjects || 0);
+  setEl('stat-presence', st.presenceRate !== null ? st.presenceRate + '%' : 'N/A');
+  setEl('stat-avg',      st.classAvg !== null ? st.classAvg + '/20' : 'N/A');
 
   // Alertes absences
-  const absenceContainer = document.getElementById('absence-alerts');
-  if (absenceContainer) {
-    const counts = {};
-    attendance.filter(a => a.status === 'absent').forEach(a => {
-      counts[a.studentId] = (counts[a.studentId] || 0) + 1;
-    });
-    const alerts = Object.entries(counts).filter(([,c]) => c >= 3).map(([sid, c]) => {
-      const s = students.find(x => x.id == sid);
-      return s ? `<div class="alert-item"><i class="fas fa-triangle-exclamation"></i>${s.nom} ${s.prenom} — ${c} absences</div>` : '';
-    }).filter(Boolean).join('');
-    absenceContainer.innerHTML = alerts || '<p class="empty-msg">Aucune alerte ✅</p>';
+  var ac = document.getElementById('absence-alerts');
+  if (ac) {
+    if (!st.absenceAlerts || !st.absenceAlerts.length) {
+      ac.innerHTML = '<p class="empty-msg">Aucune alerte ✅</p>';
+    } else {
+      ac.innerHTML = st.absenceAlerts.map(function(a) {
+        return '<div class="alert-item"><i class="fas fa-triangle-exclamation"></i> ' +
+          escHtml(a.nom + ' ' + a.prenom) + ' — <strong>' + a.absences + ' absences</strong></div>';
+      }).join('');
+    }
   }
 
   // Annonces récentes
-  const annContainer = document.getElementById('recent-announcements');
-  if (annContainer) {
-    if (!announcements.length) {
-      annContainer.innerHTML = '<p class="empty-msg">Aucune annonce publiée</p>';
+  var arc = document.getElementById('recent-announcements');
+  if (arc) {
+    if (!st.recentAnnouncements || !st.recentAnnouncements.length) {
+      arc.innerHTML = '<p class="empty-msg">Aucune annonce publiée</p>';
     } else {
-      annContainer.innerHTML = [...announcements].reverse().slice(0, 3).map(a =>
-        `<div class="announcement-card" style="margin-bottom:0.5rem">
-          <div class="ann-card-header">
-            <span class="ann-card-title">${a.title}</span>
-            <span class="ann-card-date">${a.date}</span>
-          </div>
-          <p class="ann-card-body">${a.body}</p>
-        </div>`
-      ).join('');
+      arc.innerHTML = st.recentAnnouncements.map(function(a) {
+        return '<div style="padding:.8rem;background:var(--bg3);border-radius:8px;margin-bottom:.5rem">' +
+          '<div style="display:flex;justify-content:space-between;margin-bottom:.3rem">' +
+          '<strong>' + escHtml(a.title) + '</strong>' +
+          '<span style="font-size:.75rem;color:var(--muted)">' + new Date(a.createdAt).toLocaleDateString('fr-FR') + '</span></div>' +
+          '<p style="color:var(--muted);font-size:.85rem">' + escHtml(a.body) + '</p></div>';
+      }).join('');
     }
   }
 }
 
-// ---- Utilitaires ----
-function getData(key) {
-  const raw = localStorage.getItem(key);
-  return raw ? JSON.parse(raw) : [];
+// ── Mes notes (étudiant) ──────────────────────────────
+async function renderMyGrades() {
+  var tbody = document.getElementById('my-grades-tbody');
+  var avgEl = document.getElementById('my-avg-display');
+  if (!tbody) return;
+
+  var user = getCurrentUser();
+  showLoading(tbody, 4);
+
+  var res = await api.grades.list({ student: user.studentId || '' });
+  if (!res.success || !res.grades.length) {
+    tbody.innerHTML = emptyRow(4, res.grades && res.grades.length === 0 ? 'Aucune note enregistrée.' : 'Profil non lié. Contactez l\'administrateur.');
+    if (avgEl) avgEl.textContent = '–';
+    return;
+  }
+
+  tbody.innerHTML = res.grades.map(function(g) {
+    var c = parseFloat(g.value) >= 10 ? 'var(--green)' : 'var(--red)';
+    return '<tr><td>' + escHtml(g.subjectName || '–') + '</td>' +
+      '<td><strong style="color:' + c + '">' + g.value + '/20</strong></td>' +
+      '<td><span class="badge" style="background:rgba(59,130,246,.1);color:var(--primary)">' + g.semester + '</span></td>' +
+      '<td>' + getAppreciation(parseFloat(g.value)) + '</td></tr>';
+  }).join('');
+
+  var tp = 0, tc = 0;
+  res.grades.forEach(function(g) { var co = g.coeff || 1; tp += parseFloat(g.value) * co; tc += co; });
+  if (avgEl && tc) {
+    var avg = (tp / tc).toFixed(2);
+    avgEl.textContent = avg + '/20';
+    avgEl.style.color = parseFloat(avg) >= 10 ? 'var(--green)' : 'var(--red)';
+  }
 }
-function saveData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
-function setEl(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
-function genId() { return Date.now() + Math.floor(Math.random() * 1000); }
 
-function openModal(id)  { document.getElementById(id)?.classList.add('open'); }
-function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
+// ── Mes présences (étudiant) ──────────────────────────
+async function renderMyAttendance() {
+  var tbody = document.getElementById('my-attendance-tbody');
+  if (!tbody) return;
 
-document.addEventListener('click', e => {
-  if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
-});
+  var user = getCurrentUser();
+  showLoading(tbody, 3);
 
-function showToast(msg, type = 'success') {
-  const t = document.getElementById('toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.className = `toast ${type}`;
-  t.classList.remove('hidden');
-  setTimeout(() => t.classList.add('hidden'), 3000);
+  var res = await api.attendance.list({ student: user.studentId || '' });
+  if (!res.success) { tbody.innerHTML = emptyRow(3, 'Erreur chargement.'); return; }
+
+  var recs = res.records || [];
+  setEl('my-present-count', recs.filter(function(r) { return r.status === 'present'; }).length);
+  setEl('my-retard-count',  recs.filter(function(r) { return r.status === 'retard'; }).length);
+  setEl('my-absent-count',  recs.filter(function(r) { return r.status === 'absent'; }).length);
+
+  if (!recs.length) { tbody.innerHTML = emptyRow(3, 'Aucun enregistrement.'); return; }
+
+  var labels = { present: '✅ Présent', absent: '❌ Absent', retard: '⏰ Retard' };
+  tbody.innerHTML = recs.map(function(r) {
+    return '<tr><td>' + escHtml(r.subjectName || '–') + '</td><td>' + r.date + '</td>' +
+      '<td><span class="badge badge-' + r.status + '">' + (labels[r.status] || r.status) + '</span></td></tr>';
+  }).join('');
 }
 
+// ── Utilitaires ───────────────────────────────────────
+function setEl(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function emptyRow(c, m) { return '<tr><td colspan="' + c + '" style="text-align:center;color:var(--muted);padding:2rem;font-style:italic">' + m + '</td></tr>'; }
+function showLoading(el, cols) { if (typeof el === 'string') el = document.getElementById(el); if (el) el.innerHTML = emptyRow(cols, '<i class="fas fa-spinner fa-spin"></i> Chargement...'); }
+function getAppreciation(v) {
+  if (v >= 16) return '🌟 Très bien'; if (v >= 14) return '👍 Bien';
+  if (v >= 12) return '✅ Assez bien'; if (v >= 10) return '📘 Passable';
+  return '❌ Insuffisant';
+}
+function openModal(id)  { var m = document.getElementById(id); if (m) m.classList.add('open'); }
+function closeModal(id) { var m = document.getElementById(id); if (m) m.classList.remove('open'); }
+document.addEventListener('click', function(e) { if (e.target && e.target.classList.contains('modal-overlay')) e.target.classList.remove('open'); });
+function showToast(msg, type) {
+  var t = document.getElementById('toast'); if (!t) return;
+  t.textContent = msg; t.className = 'toast ' + (type||'success'); t.classList.remove('hidden');
+  clearTimeout(t._t); t._t = setTimeout(function() { t.classList.add('hidden'); }, CONFIG.TOAST_DURATION);
+}
 function confirmDelete(msg) { return confirm(msg || 'Confirmer la suppression ?'); }
+function fillSelect(id, items, valueFn, labelFn, allLabel) {
+  var sel = document.getElementById(id); if (!sel) return;
+  var prev = sel.value;
+  sel.innerHTML = allLabel ? '<option value="">' + allLabel + '</option>' : '';
+  (items||[]).forEach(function(item) { var o = document.createElement('option'); o.value = valueFn(item); o.textContent = labelFn(item); sel.appendChild(o); });
+  if (prev) sel.value = prev;
+}
