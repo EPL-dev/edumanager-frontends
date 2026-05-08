@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const user = checkAuth();
   if (!user) return;
 
-  applyRole(user);
+  applyInterface(user);
   applyMenuByRole(user);
   initNavigation();
   initSidebar();
