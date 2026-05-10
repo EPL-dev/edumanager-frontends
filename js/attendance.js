@@ -1,26 +1,25 @@
-// attendance.js — MySQL version (corrigé)
+// attendance.js — Matière automatique pour admin
 
 var attSession = {};
 
-// Formater la date proprement
-function formatDate(dateStr) {
-  if (!dateStr) return '–';
-  var d = new Date(dateStr);
-  if (isNaN(d.getTime())) {
-    // Si c'est déjà au format YYYY-MM-DD
-    var parts = dateStr.split('T')[0].split('-');
-    if (parts.length === 3) {
-      return parts[2] + '/' + parts[1] + '/' + parts[0];
-    }
-    return dateStr;
-  }
-  return d.toLocaleDateString('fr-FR');
-}
-
 async function initAttFilters() {
-  await fillSubjectsSelect('att-subject-filter', true);
-  var d = document.getElementById('att-date-filter');
-  if (d && !d.value) d.value = new Date().toISOString().split('T')[0];
+  var user = getCurrentUser();
+
+  if (user.role === 'admin' && user.subjectId) {
+    // Admin → cacher le filtre matière, sa matière est automatique
+    var subjFilter = document.getElementById('att-subject-filter');
+    if (subjFilter) subjFilter.parentElement.style.display = 'none';
+
+    // Date du jour par défaut
+    var d = document.getElementById('att-date-filter');
+    if (d && !d.value) d.value = new Date().toISOString().split('T')[0];
+
+  } else {
+    // Superadmin → voir toutes les matières
+    await fillSubjectsSelect('att-subject-filter', true);
+    var d = document.getElementById('att-date-filter');
+    if (d && !d.value) d.value = new Date().toISOString().split('T')[0];
+  }
 }
 
 async function renderAttendance() {
@@ -28,14 +27,21 @@ async function renderAttendance() {
   if (!tbody) return;
   showLoading(tbody, 5);
 
+  var user   = getCurrentUser();
   var params = {};
-  var subj = document.getElementById('att-subject-filter')?.value;
+
+  // Admin → filtrer automatiquement par sa matière
+  if (user.role === 'admin' && user.subjectId) {
+    params.subject = user.subjectId;
+  } else {
+    var subj = document.getElementById('att-subject-filter')?.value;
+    if (subj) params.subject = subj;
+  }
+
   var date = document.getElementById('att-date-filter')?.value;
-  if (subj) params.subject = subj;
-  if (date) params.date    = date;
+  if (date) params.date = date;
 
   var res     = await api.attendance.list(params);
-  var user    = getCurrentUser();
   var isAdmin = (user.role === 'admin' || user.role === 'superadmin');
 
   if (!res.success) { tbody.innerHTML = emptyRow(5, 'Erreur chargement.'); return; }
@@ -57,7 +63,33 @@ async function renderAttendance() {
 }
 
 async function openAttendanceSession() {
-  await fillSubjectsSelect('att-modal-subject', false);
+  var user = getCurrentUser();
+
+  if (user.role === 'admin' && user.subjectId) {
+    // Admin → sa matière est automatique, pas de sélection
+    var subjSelect = document.getElementById('att-modal-subject');
+    if (subjSelect) {
+      subjSelect.innerHTML = '';
+      // Charger le nom de sa matière
+      var res = await api.subjects.list();
+      if (res.success) {
+        var subject = res.subjects.find(function(s) { return s.id == user.subjectId; });
+        if (subject) {
+          var o = document.createElement('option');
+          o.value = subject.id;
+          o.textContent = subject.name;
+          subjSelect.appendChild(o);
+          subjSelect.parentElement.style.display = 'none'; // cacher le champ
+        }
+      }
+    }
+  } else {
+    // Superadmin → choisir la matière
+    var subjParent = document.getElementById('att-modal-subject')?.parentElement;
+    if (subjParent) subjParent.style.display = '';
+    await fillSubjectsSelect('att-modal-subject', false);
+  }
+
   var d = document.getElementById('att-modal-date');
   if (d) d.value = new Date().toISOString().split('T')[0];
   attSession = {};
@@ -97,8 +129,11 @@ function setAtt(sid, status, btn) {
 }
 
 async function saveAttendance() {
-  var subjectId = document.getElementById('att-modal-subject')?.value;
-  var date      = document.getElementById('att-modal-date')?.value;
+  var user      = getCurrentUser();
+  var subjectId = user.role === 'admin' && user.subjectId
+    ? user.subjectId
+    : document.getElementById('att-modal-subject')?.value;
+  var date = document.getElementById('att-modal-date')?.value;
 
   if (!subjectId || !date) { showToast('Matière et date requises.', 'error'); return; }
   if (!Object.keys(attSession).length) { showToast('Marquez au moins un étudiant.', 'error'); return; }
@@ -109,16 +144,23 @@ async function saveAttendance() {
 
   var res = await api.attendance.saveSession({ subjectId: subjectId, date: date, records: records });
   if (!res.success) { showToast(res.message, 'error'); return; }
-
   showToast('Séance enregistrée (' + records.length + ' étudiants) ✅');
   closeModal('modal-attendance');
   renderAttendance();
 }
 
 async function deleteAttendance(id) {
-  if (!confirmDelete('Supprimer cet enregistrement de présence ?')) return;
+  if (!confirmDelete('Supprimer cet enregistrement ?')) return;
   var res = await api.attendance.remove(id);
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Présence supprimée.');
   renderAttendance();
 }
+
+function formatDate(dateStr) {
+  if (!dateStr) return '–';
+  var clean = String(dateStr).split('T')[0];
+  var parts = clean.split('-');
+  if (parts.length === 3) return parts[2] + '/' + parts[1] + '/' + parts[0];
+  return dateStr;
+                                        }
