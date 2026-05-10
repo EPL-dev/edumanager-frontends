@@ -1,14 +1,37 @@
-// app.js — Version finale sans boucle
+// app.js — Dashboard admin affiche directement sa matière
 
 document.addEventListener('DOMContentLoaded', async function() {
   var user = checkAuth();
-  if (!user) return; // checkAuth redirige déjà vers index.html
+  if (!user) return;
 
   applyInterface(user);
   initNav();
   initSidebar();
+
+  // Afficher la matière de l'admin dans le topbar
+  if (user.role === 'admin' && user.subjectId) {
+    showAdminSubject(user);
+  }
+
   await updateDashboard();
 });
+
+// Afficher le nom de la matière de l'admin
+async function showAdminSubject(user) {
+  try {
+    var res = await api.subjects.list();
+    if (!res.success) return;
+    var subject = res.subjects.find(function(s) { return s.id == user.subjectId; });
+    if (subject) {
+      var tt = document.getElementById('topbar-title');
+      if (tt) tt.textContent = 'Tableau de bord — ' + subject.name;
+
+      // Afficher badge matière dans sidebar
+      var roleEl = document.getElementById('user-display-role');
+      if (roleEl) roleEl.textContent = '🔑 Admin — ' + subject.name;
+    }
+  } catch(e) {}
+}
 
 function applyInterface(user) {
   var labels = { superadmin: '👑 Super Admin', admin: '🔑 Admin', etudiant: '🎓 Étudiant' };
@@ -81,11 +104,9 @@ function closeSidebar() { var s = document.getElementById('sidebar'); if (s) s.c
 async function updateDashboard() {
   var res = await api.dashboard.stats();
   if (!res.success) {
-    // Si erreur 401 → déjà géré par api.js
-    // Sinon afficher message sans bloquer
-    var ac = document.getElementById('absence-alerts');
-    if (ac) ac.innerHTML = '<p class="empty-msg">Données non disponibles</p>';
+    var ac  = document.getElementById('absence-alerts');
     var arc = document.getElementById('recent-announcements');
+    if (ac)  ac.innerHTML  = '<p class="empty-msg">Données non disponibles</p>';
     if (arc) arc.innerHTML = '<p class="empty-msg">Données non disponibles</p>';
     return;
   }
@@ -117,8 +138,7 @@ async function updateDashboard() {
         return '<div style="padding:.8rem;background:var(--bg3);border-radius:8px;margin-bottom:.5rem">' +
           '<div style="display:flex;justify-content:space-between;margin-bottom:.3rem">' +
           '<strong>' + escHtml(a.title) + '</strong>' +
-          '<span style="font-size:.75rem;color:var(--muted)">' +
-          new Date(a.createdAt).toLocaleDateString('fr-FR') + '</span></div>' +
+          '<span style="font-size:.75rem;color:var(--muted)">' + new Date(a.createdAt).toLocaleDateString('fr-FR') + '</span></div>' +
           '<p style="color:var(--muted);font-size:.85rem">' + escHtml(a.body) + '</p></div>';
       }).join('');
     }
@@ -131,19 +151,37 @@ async function renderMyGrades() {
   if (!tbody) return;
   var user = getCurrentUser();
   showLoading(tbody, 4);
+
   var res = await api.grades.list({ student: user.studentId || '' });
   if (!res.success || !res.grades || !res.grades.length) {
     tbody.innerHTML = emptyRow(4, 'Aucune note enregistrée.');
     if (avgEl) avgEl.textContent = '–';
     return;
   }
-  tbody.innerHTML = res.grades.map(function(g) {
-    var c = parseFloat(g.value) >= 10 ? 'var(--green)' : 'var(--red)';
-    return '<tr><td>' + escHtml(g.subjectName || '–') + '</td>' +
-      '<td><strong style="color:' + c + '">' + g.value + '/20</strong></td>' +
-      '<td><span class="badge" style="background:rgba(59,130,246,.1);color:var(--blue)">' + g.semester + '</span></td>' +
-      '<td>' + getAppreciation(parseFloat(g.value)) + '</td></tr>';
-  }).join('');
+
+  // Grouper par matière
+  var bySubject = {};
+  res.grades.forEach(function(g) {
+    var key = g.subjectName || 'Inconnue';
+    if (!bySubject[key]) bySubject[key] = [];
+    bySubject[key].push(g);
+  });
+
+  var html = '';
+  Object.keys(bySubject).forEach(function(subjectName) {
+    var grades = bySubject[subjectName];
+    html += '<tr><td colspan="4" style="background:var(--bg3);font-weight:700;color:var(--blue);padding:.5rem 1rem">📚 ' + escHtml(subjectName) + '</td></tr>';
+    grades.forEach(function(g) {
+      var c = parseFloat(g.value) >= 10 ? 'var(--green)' : 'var(--red)';
+      html += '<tr>' +
+        '<td>' + escHtml(g.subjectName || '–') + '</td>' +
+        '<td><strong style="color:' + c + '">' + g.value + '/20</strong></td>' +
+        '<td><span class="badge badge-sem">' + g.semester + '</span></td>' +
+        '<td>' + getAppreciation(parseFloat(g.value)) + '</td></tr>';
+    });
+  });
+  tbody.innerHTML = html;
+
   var tp = 0, tc = 0;
   res.grades.forEach(function(g) { var co = g.coeff || 1; tp += parseFloat(g.value) * co; tc += co; });
   if (avgEl && tc) {
@@ -158,19 +196,37 @@ async function renderMyAttendance() {
   if (!tbody) return;
   var user = getCurrentUser();
   showLoading(tbody, 3);
+
   var res = await api.attendance.list({ student: user.studentId || '' });
   if (!res.success) { tbody.innerHTML = emptyRow(3, 'Erreur chargement.'); return; }
+
   var recs = res.records || [];
   setEl('my-present-count', recs.filter(function(r) { return r.status === 'present'; }).length);
   setEl('my-retard-count',  recs.filter(function(r) { return r.status === 'retard'; }).length);
   setEl('my-absent-count',  recs.filter(function(r) { return r.status === 'absent'; }).length);
+
   if (!recs.length) { tbody.innerHTML = emptyRow(3, 'Aucun enregistrement.'); return; }
+
+  // Grouper par matière
+  var bySubject = {};
+  recs.forEach(function(r) {
+    var key = r.subjectName || 'Inconnue';
+    if (!bySubject[key]) bySubject[key] = [];
+    bySubject[key].push(r);
+  });
+
   var labels = { present: '✅ Présent', absent: '❌ Absent', retard: '⏰ Retard' };
-  tbody.innerHTML = recs.map(function(r) {
-    return '<tr><td>' + escHtml(r.subjectName || '–') + '</td>' +
-      '<td>' + formatDate(r.date) + '</td>' +
-      '<td><span class="badge badge-' + r.status + '">' + (labels[r.status] || r.status) + '</span></td></tr>';
-  }).join('');
+  var html = '';
+  Object.keys(bySubject).forEach(function(subjectName) {
+    html += '<tr><td colspan="3" style="background:var(--bg3);font-weight:700;color:var(--blue);padding:.5rem 1rem">📚 ' + escHtml(subjectName) + '</td></tr>';
+    bySubject[subjectName].forEach(function(r) {
+      html += '<tr>' +
+        '<td>' + escHtml(r.subjectName || '–') + '</td>' +
+        '<td>' + formatDate(r.date) + '</td>' +
+        '<td><span class="badge badge-' + r.status + '">' + (labels[r.status] || r.status) + '</span></td></tr>';
+    });
+  });
+  tbody.innerHTML = html;
 }
 
 function formatDate(dateStr) {
@@ -206,9 +262,8 @@ function fillSelect(id, items, valueFn, labelFn, allLabel) {
   sel.innerHTML = allLabel ? '<option value="">' + allLabel + '</option>' : '';
   (items || []).forEach(function(item) {
     var o = document.createElement('option');
-    o.value = valueFn(item);
-    o.textContent = labelFn(item);
+    o.value = valueFn(item); o.textContent = labelFn(item);
     sel.appendChild(o);
   });
   if (prev) sel.value = prev;
-}
+                                                                                  }
