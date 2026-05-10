@@ -1,21 +1,25 @@
-// announcements.js — MySQL version
+// announcements.js — avec matière affichée
 
 async function renderAnnouncements() {
   var c = document.getElementById('announcements-list');
   if (!c) return;
   c.innerHTML = '<p style="color:var(--muted);padding:1rem"><i class="fas fa-spinner fa-spin"></i> Chargement...</p>';
 
-  var res     = await api.announcements.list();
-  var user    = getCurrentUser();
+  var res  = await api.announcements.list();
+  var user = getCurrentUser();
   var isAdmin = (user.role === 'admin' || user.role === 'superadmin');
 
   if (!res.success) { c.innerHTML = '<p style="color:var(--muted);padding:1rem">Erreur chargement.</p>'; return; }
   if (!res.announcements.length) { c.innerHTML = '<p style="color:var(--muted);padding:1rem">Aucune annonce publiée.</p>'; return; }
 
   c.innerHTML = res.announcements.map(function(a) {
+    var subjectBadge = a.subjectName
+      ? '<span class="badge badge-sem" style="margin-left:.5rem">' + escHtml(a.subjectName) + '</span>'
+      : '<span class="badge" style="background:rgba(100,100,100,.1);color:var(--muted);margin-left:.5rem">Général</span>';
+
     return '<div class="ann-card">' +
       '<div class="ann-card-hd">' +
-        '<span class="ann-card-title">📢 ' + escHtml(a.title) + '</span>' +
+        '<span class="ann-card-title">📢 ' + escHtml(a.title) + subjectBadge + '</span>' +
         '<span class="ann-date">' + new Date(a.createdAt).toLocaleDateString('fr-FR') + '</span>' +
       '</div>' +
       '<p class="ann-body">' + escHtml(a.body) + '</p>' +
@@ -48,4 +52,5 @@ async function deleteAnnouncement(id) {
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Annonce supprimée.');
   renderAnnouncements();
-}
+      }
+    
