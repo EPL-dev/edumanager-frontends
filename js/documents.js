@@ -1,26 +1,35 @@
-// documents.js — MySQL version
+// documents.js — avec matière affichée
 
 async function renderDocuments() {
   var c = document.getElementById('documents-list');
   if (!c) return;
   c.innerHTML = '<p style="color:var(--muted);padding:1rem"><i class="fas fa-spinner fa-spin"></i> Chargement...</p>';
 
-  var res     = await api.documents.list();
-  var user    = getCurrentUser();
+  var res  = await api.documents.list();
+  var user = getCurrentUser();
   var isAdmin = (user.role === 'admin' || user.role === 'superadmin');
 
   if (!res.success) { c.innerHTML = '<p style="color:var(--muted);padding:1rem">Erreur chargement.</p>'; return; }
   if (!res.documents.length) { c.innerHTML = '<p style="color:var(--muted);padding:1rem">Aucun document disponible.</p>'; return; }
 
   var icons = { pdf: '📄', doc: '📝', autre: '📁' };
+
   c.innerHTML = res.documents.map(function(d) {
+    var subjectBadge = d.subjectName
+      ? '<span class="badge badge-sem">' + escHtml(d.subjectName) + '</span>'
+      : '<span class="badge" style="background:rgba(100,100,100,.1);color:var(--muted)">Général</span>';
+
     return '<div class="doc-card">' +
       '<div class="doc-icon">' + (icons[d.type] || '📁') + '</div>' +
       '<div class="doc-name">' + escHtml(d.name) + '</div>' +
+      '<div>' + subjectBadge + '</div>' +
       '<div class="doc-actions">' +
-        '<a href="' + escHtml(d.url) + '" target="_blank" rel="noopener" class="btn-primary sm"><i class="fas fa-download"></i> Télécharger</a>' +
+        '<a href="' + escHtml(d.url) + '" target="_blank" rel="noopener" class="btn-primary sm">' +
+          '<i class="fas fa-download"></i> Télécharger' +
+        '</a>' +
         (isAdmin ? '<button class="btn-icon del" onclick="deleteDocument(' + d.id + ')"><i class="fas fa-trash"></i></button>' : '') +
-      '</div></div>';
+      '</div>' +
+    '</div>';
   }).join('');
 }
 
@@ -52,4 +61,5 @@ async function deleteDocument(id) {
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Document supprimé.');
   renderDocuments();
-}
+      }
+    
