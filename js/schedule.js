@@ -1,4 +1,5 @@
-// schedule.js — MySQL version
+// schedule.js — Seul superadmin peut modifier
+
 var DAYS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
 
 async function renderSchedule() {
@@ -6,9 +7,13 @@ async function renderSchedule() {
   if (!grid) return;
   grid.innerHTML = '<p style="color:var(--muted);padding:1rem"><i class="fas fa-spinner fa-spin"></i> Chargement...</p>';
 
-  var res     = await api.schedule.list();
-  var user    = getCurrentUser();
-  var isAdmin = (user.role === 'admin' || user.role === 'superadmin');
+  var res  = await api.schedule.list();
+  var user = getCurrentUser();
+  var isSA = (user.role === 'superadmin');
+
+  // Cacher le bouton Ajouter si pas superadmin
+  var btnAdd = document.querySelector('#section-schedule .btn-primary');
+  if (btnAdd) btnAdd.style.display = isSA ? '' : 'none';
 
   if (!res.success) { grid.innerHTML = '<p style="color:var(--muted);padding:1rem">Erreur chargement.</p>'; return; }
 
@@ -21,7 +26,8 @@ async function renderSchedule() {
           return '<div class="slot">' +
             '<span class="slot-time">' + s.startTime + ' – ' + s.endTime + '</span>' +
             '<span class="slot-name">' + escHtml(s.subjectName || '–') + '</span>' +
-            (isAdmin ? '<button class="btn-icon del sm" onclick="deleteSlot(' + s.id + ')"><i class="fas fa-xmark"></i></button>' : '') +
+            // Bouton supprimer seulement pour superadmin
+            (isSA ? '<button class="btn-icon del sm" onclick="deleteSlot(' + s.id + ')"><i class="fas fa-xmark"></i></button>' : '') +
           '</div>';
         }).join('')
       : '<p class="slot-empty">Pas de cours</p>';
@@ -57,4 +63,4 @@ async function deleteSlot(id) {
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Cours supprimé.');
   renderSchedule();
-}
+                }
