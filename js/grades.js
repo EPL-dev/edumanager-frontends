@@ -1,8 +1,24 @@
-// grades.js — MySQL version
+// grades.js — Matière automatique pour admin
 
 async function initGradeFilters() {
-  await fillSubjectsSelect('grade-subject-filter', true);
-  await fillSubjectsSelect('grade-subject', false);
+  var user = getCurrentUser();
+
+  if (user.role === 'admin' && user.subjectId) {
+    // Admin → matière fixée automatiquement, pas de sélection
+    var subjFilter = document.getElementById('grade-subject-filter');
+    if (subjFilter) {
+      subjFilter.parentElement.style.display = 'none'; // cacher le filtre
+    }
+
+    // Remplir le select de la modal avec SA matière uniquement
+    await fillSubjectsSelect('grade-subject', false);
+
+  } else {
+    // Superadmin → voir toutes les matières
+    await fillSubjectsSelect('grade-subject-filter', true);
+    await fillSubjectsSelect('grade-subject', false);
+  }
+
   await fillStudentsSelect('grade-student');
 }
 
@@ -11,11 +27,18 @@ async function renderGrades() {
   if (!tbody) return;
   showLoading(tbody, 5);
 
+  var user   = getCurrentUser();
   var params = {};
-  var sem  = document.getElementById('grade-sem-filter')?.value;
-  var subj = document.getElementById('grade-subject-filter')?.value;
-  if (sem)  params.semester = sem;
-  if (subj) params.subject  = subj;
+
+  // Admin → filtrer automatiquement par sa matière
+  if (user.role === 'admin' && user.subjectId) {
+    params.subject = user.subjectId;
+  } else {
+    var sem  = document.getElementById('grade-sem-filter')?.value;
+    var subj = document.getElementById('grade-subject-filter')?.value;
+    if (sem)  params.semester = sem;
+    if (subj) params.subject  = subj;
+  }
 
   var res = await api.grades.list(params);
   if (!res.success) { tbody.innerHTML = emptyRow(5, 'Erreur chargement.'); return; }
@@ -43,14 +66,17 @@ async function renderRanking() {
   showLoading(tbody, 4);
 
   var res = await api.grades.ranking();
-  if (!res.success || !res.ranking.length) { tbody.innerHTML = emptyRow(4, 'Aucun classement disponible.'); return; }
+  if (!res.success || !res.ranking.length) {
+    tbody.innerHTML = emptyRow(4, 'Aucun classement disponible.');
+    return;
+  }
 
-  var medals = ['🥇', '🥈', '🥉'];
+  var medals = ['🥇','🥈','🥉'];
   tbody.innerHTML = res.ranking.map(function(r, i) {
     var avg = r.average !== null ? parseFloat(r.average).toFixed(2) : null;
     var c   = avg !== null ? (parseFloat(avg) >= 10 ? 'color:var(--green)' : 'color:var(--red)') : '';
-    return '<tr class="' + (i < 3 ? 'rank-' + (i + 1) : '') + '">' +
-      '<td style="font-size:1.1rem">' + (i < 3 ? medals[i] : (i + 1)) + '</td>' +
+    return '<tr class="' + (i < 3 ? 'rank-'+(i+1) : '') + '">' +
+      '<td style="font-size:1.1rem">' + (i < 3 ? medals[i] : (i+1)) + '</td>' +
       '<td>' + escHtml((r.nom || '') + ' ' + (r.prenom || '')) + '</td>' +
       '<td style="' + c + ';font-weight:700">' + (avg !== null ? avg + '/20' : 'N/A') + '</td>' +
       '<td style="font-size:.82rem">' + (avg !== null ? getAppreciation(parseFloat(avg)) : '–') + '</td></tr>';
@@ -61,6 +87,14 @@ function openGradeModal() {
   document.getElementById('grade-id').value    = '';
   document.getElementById('grade-value').value = '';
   document.getElementById('grade-sem').value   = 'S1';
+
+  // Si admin → pré-sélectionner sa matière automatiquement
+  var user = getCurrentUser();
+  if (user.role === 'admin' && user.subjectId) {
+    var sel = document.getElementById('grade-subject');
+    if (sel) sel.value = user.subjectId;
+  }
+
   setEl('modal-grade-title', 'Ajouter une note');
   openModal('modal-grade');
 }
@@ -81,6 +115,12 @@ async function saveGrade() {
   var subjectId = document.getElementById('grade-subject').value;
   var value     = parseFloat(document.getElementById('grade-value').value);
   var semester  = document.getElementById('grade-sem').value;
+
+  // Admin → forcer sa matière
+  var user = getCurrentUser();
+  if (user.role === 'admin' && user.subjectId) {
+    subjectId = user.subjectId;
+  }
 
   if (!studentId || !subjectId || isNaN(value) || value < 0 || value > 20) {
     showToast('Données invalides (note entre 0 et 20).', 'error'); return;
@@ -105,5 +145,9 @@ async function deleteGrade(id) {
 
 async function fillStudentsSelect(selId) {
   var res = await api.students.list({ limit: 1000 });
-  fillSelect(selId, res.students || [], function(s) { return s.id; }, function(s) { return s.nom + ' ' + s.prenom; }, null);
-}
+  fillSelect(selId, res.students || [],
+    function(s) { return s.id; },
+    function(s) { return s.nom + ' ' + s.prenom; },
+    null
+  );
+      }
