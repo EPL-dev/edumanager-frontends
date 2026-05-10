@@ -61,5 +61,4 @@ async function deleteDocument(id) {
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Document supprimé.');
   renderDocuments();
-      }
-    
+               }
