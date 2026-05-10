@@ -52,5 +52,4 @@ async function deleteAnnouncement(id) {
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Annonce supprimée.');
   renderAnnouncements();
-      }
-  
+}
