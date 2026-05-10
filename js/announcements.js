@@ -53,4 +53,4 @@ async function deleteAnnouncement(id) {
   showToast('Annonce supprimée.');
   renderAnnouncements();
       }
-    
+  
