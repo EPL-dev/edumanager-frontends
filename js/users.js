@@ -1,4 +1,4 @@
-// users.js — avec liaison matière pour admins
+// users.js — Liste visible seulement par superadmin
 
 async function renderUsers() {
   var tbody = document.getElementById('users-tbody');
@@ -15,8 +15,8 @@ async function renderUsers() {
 
   tbody.innerHTML = res.users.map(function(u, i) {
     var isSelf  = u.id === user.id;
-    var linked  = (u.studentNom && u.studentPrenom) ? u.studentNom + ' ' + u.studentPrenom : '–';
     var subject = u.subjectName || '–';
+    var linked  = (u.studentNom && u.studentPrenom) ? u.studentNom + ' ' + u.studentPrenom : '–';
 
     return '<tr>' +
       '<td>' + (i + 1) + '</td>' +
@@ -121,16 +121,15 @@ async function saveUser() {
 
   var res = id ? await api.users.update(id, data) : await api.users.create(data);
   if (!res.success) { showToast(res.message, 'error'); return; }
-
   showToast(id ? 'Compte modifié ✅' : 'Compte créé ✅');
   closeModal('modal-user');
   renderUsers();
 }
 
 async function deleteUser(id) {
-  if (!confirmDelete('Supprimer ce compte utilisateur ?')) return;
+  if (!confirmDelete('Supprimer ce compte ?')) return;
   var res = await api.users.remove(id);
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Compte supprimé.');
   renderUsers();
-}
+      }
