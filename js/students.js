@@ -1,4 +1,4 @@
-// students.js — MySQL version
+// students.js — Admin lecture seule
 
 var studentPage   = 1;
 var studentSearch = '';
@@ -8,44 +8,54 @@ async function renderStudents() {
   if (!tbody) return;
   showLoading(tbody, 5);
 
-  var res = await api.students.list({ page: studentPage, limit: CONFIG.PAGE_SIZE, q: studentSearch });
-  if (!res.success) { tbody.innerHTML = emptyRow(5, 'Erreur : ' + res.message); return; }
+  var res  = await api.students.list({ page: studentPage, limit: CONFIG.PAGE_SIZE, q: studentSearch });
+  var user = getCurrentUser();
+  var isSA = (user.role === 'superadmin');
+
+  // Cacher bouton Ajouter pour admin
+  var btnAdd = document.querySelector('#section-students .btn-primary');
+  if (btnAdd) btnAdd.style.display = isSA ? '' : 'none';
+
+  if (!res.success) { tbody.innerHTML = emptyRow(5, 'Erreur chargement.'); return; }
 
   var students = res.students || [];
-  var user     = getCurrentUser();
-  var isAdmin  = (user.role === 'admin' || user.role === 'superadmin');
-
   if (!students.length) {
-    tbody.innerHTML = emptyRow(5, studentSearch ? 'Aucun résultat pour "' + studentSearch + '"' : 'Aucun étudiant enregistré.');
+    tbody.innerHTML = emptyRow(5, studentSearch ? 'Aucun résultat.' : 'Aucun étudiant enregistré.');
   } else {
     tbody.innerHTML = students.map(function(s, i) {
       return '<tr>' +
         '<td>' + ((studentPage - 1) * CONFIG.PAGE_SIZE + i + 1) + '</td>' +
         '<td><code style="font-family:monospace;color:var(--blue);font-size:.8rem">' + escHtml(s.matricule) + '</code></td>' +
         '<td><strong>' + escHtml(s.nom) + '</strong> ' + escHtml(s.prenom) + '</td>' +
-        '<td><span class="badge ' + (s.sexe === 'M' ? 'badge-m' : 'badge-f') + '">' + (s.sexe === 'M' ? '♂ M' : '♀ F') + '</span></td>' +
-        '<td>' + (isAdmin
+        '<td><span class="badge ' + (s.sexe === 'M' ? 'badge-m' : 'badge-f') + '">' +
+          (s.sexe === 'M' ? '♂ M' : '♀ F') + '</span></td>' +
+        '<td>' + (isSA
           ? '<button class="btn-icon edit" onclick="editStudent(' + s.id + ')"><i class="fas fa-pen"></i></button>' +
-            '<button class="btn-icon del"  onclick="deleteStudent(' + s.id + ')"><i class="fas fa-trash"></i></button>'
-          : '–') + '</td></tr>';
+            '<button class="btn-icon del" onclick="deleteStudent(' + s.id + ')"><i class="fas fa-trash"></i></button>'
+          : '–') +
+        '</td></tr>';
     }).join('');
   }
 
   var pages = res.pages || 1;
   var total = res.total || 0;
   setEl('page-info', 'Page ' + studentPage + ' / ' + pages + ' — ' + total + ' étudiant' + (total > 1 ? 's' : ''));
-  var bp = document.getElementById('btn-prev');
-  var bn = document.getElementById('btn-next');
-  if (bp) bp.disabled = (studentPage <= 1);
-  if (bn) bn.disabled = (studentPage >= pages);
+  if (document.getElementById('btn-prev')) document.getElementById('btn-prev').disabled = (studentPage <= 1);
+  if (document.getElementById('btn-next')) document.getElementById('btn-next').disabled = (studentPage >= pages);
 }
 
-function searchStudents() { studentSearch = document.getElementById('search-student')?.value || ''; studentPage = 1; renderStudents(); }
+function searchStudents() {
+  studentSearch = document.getElementById('search-student')?.value || '';
+  studentPage   = 1;
+  renderStudents();
+}
 function prevStudentPage() { if (studentPage > 1) { studentPage--; renderStudents(); } }
 function nextStudentPage() { studentPage++; renderStudents(); }
 
 function openStudentModal() {
-  ['student-id','student-matricule','student-nom','student-prenom'].forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+  ['student-id','student-matricule','student-nom','student-prenom'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
   var sx = document.getElementById('student-sexe'); if (sx) sx.value = 'M';
   setEl('modal-student-title', 'Ajouter un étudiant');
   openModal('modal-student');
@@ -70,12 +80,10 @@ async function saveStudent() {
   var nom       = document.getElementById('student-nom').value.trim();
   var prenom    = document.getElementById('student-prenom').value.trim();
   var sexe      = document.getElementById('student-sexe').value;
-
-  if (!matricule || !nom || !prenom) { showToast('Tous les champs sont requis.', 'error'); return; }
-
-  var data = { matricule: matricule, nom: nom, prenom: prenom, sexe: sexe };
-  var res  = id ? await api.students.update(id, data) : await api.students.create(data);
-
+  if (!matricule || !nom || !prenom) { showToast('Tous les champs requis.', 'error'); return; }
+  var res = id
+    ? await api.students.update(id, { matricule, nom, prenom, sexe })
+    : await api.students.create({ matricule, nom, prenom, sexe });
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast(id ? 'Étudiant modifié ✅' : 'Étudiant ajouté ✅');
   closeModal('modal-student');
@@ -83,9 +91,10 @@ async function saveStudent() {
 }
 
 async function deleteStudent(id) {
-  if (!confirmDelete('Supprimer cet étudiant ? Ses notes et présences seront supprimées.')) return;
+  if (!confirmDelete('Supprimer cet étudiant ?')) return;
   var res = await api.students.remove(id);
   if (!res.success) { showToast(res.message, 'error'); return; }
   showToast('Étudiant supprimé.');
   renderStudents();
-}
+      }
+    
